@@ -14015,8 +14015,8 @@ def enhanced_main_loop():
     Enhanced main execution loop for drug discovery applications with improved error handling,
     recovery mechanisms, and checkpointing reliability.
     
-    This version is optimized for pharmaceutical research, molecular analysis,
-    and drug candidate screening.
+    This version includes integrated immune-gene regulatory network analysis for immunomodulatory
+    drug discovery and development.
     """
     global adaptive_learning, agent_instance
 
@@ -14029,13 +14029,15 @@ def enhanced_main_loop():
         "emergency_mode": False,
         "recovery_attempts": 0,
         "molecules_processed": 0,
-        "promising_candidates": []
+        "promising_candidates": [],
+        "immune_compounds_analyzed": 0,
+        "top_immunomodulators": []
     }
 
     # Initialize components with comprehensive error handling
     try:
         # 1. Load or create model with architecture optimized for molecular analysis
-        log_event("Initializing Quantum Nexus model for drug discovery...", "INFO")
+        log_event("Initializing Quantum Nexus model for drug discovery with immune system modeling...", "INFO")
         model = load_or_create_drug_discovery_model()
 
         # 2. Create optimizer
@@ -14080,11 +14082,25 @@ def enhanced_main_loop():
         research_planner = DrugResearchPlanner()
         agent.research_planner = research_planner
 
+        # 5. Initialize immune-gene regulatory network components
+        log_event("Initializing immune-gene regulatory network modeling system...", "INFO")
+        immune_network = ImmuneGeneRegulatoryNetwork(num_genes=15, num_cytokines=8, num_receptors=5, seed=42)
+        agent.immune_network = immune_network
+        
+        # Initialize immunomodulating compound analyzer
+        immune_analyzer = ImmunomodulatingCompoundAnalyzer(immune_network)
+        agent.immune_analyzer = immune_analyzer
+        
+        # Link immune network to molecular reasoning
+        if hasattr(molecular_reasoning, "link_immune_network"):
+            molecular_reasoning.link_immune_network(immune_network)
+            log_event("Linked immune network to molecular reasoning system", "INFO")
+
         # Link consciousness to molecular reasoning
         if hasattr(ai_manager, "consciousness") and hasattr(molecular_reasoning, "link_consciousness"):
             molecular_reasoning.link_consciousness(ai_manager.consciousness)
 
-        # 5. Load molecular data sources
+        # 6. Load molecular data sources
         log_event("Loading molecular databases and literature sources...", "INFO")
         data_sources = [
             "pubchem_compounds.sdf",
@@ -14094,15 +14110,25 @@ def enhanced_main_loop():
             "literature_targets.json"
         ]
         
-        for source in data_sources:
+        # Add immune-specific data sources
+        immune_data_sources = [
+            "immunomodulatory_compounds.sdf",
+            "cytokine_inhibitors.csv",
+            "immune_receptor_ligands.json"
+        ]
+        
+        # Combine data sources
+        all_data_sources = data_sources + immune_data_sources
+        
+        for source in all_data_sources:
             try:
                 molecular_database.load_data_source(source)
                 log_event(f"Successfully loaded data source: {source}", "INFO")
             except Exception as e:
                 log_event(f"Warning: Failed to load data source {source}: {str(e)}", "WARNING")
 
-        # 6. System validation
-        log_event("Performing system validation for drug discovery framework...", "INFO")
+        # 7. System validation
+        log_event("Performing system validation for drug discovery framework with immune modeling...", "INFO")
         validation_errors = []
 
         if model is None:
@@ -14117,6 +14143,8 @@ def enhanced_main_loop():
             validation_errors.append("AIManager initialization failed")
         if molecular_database is None or molecular_database.compound_count() == 0:
             validation_errors.append("MolecularDatabase initialization or loading failed")
+        if immune_network is None:
+            validation_errors.append("ImmuneGeneRegulatoryNetwork initialization failed")
 
         if validation_errors:
             validation_error_msg = "; ".join(validation_errors)
@@ -14125,13 +14153,31 @@ def enhanced_main_loop():
 
         log_event(f"System validation complete. All components initialized. Loaded {molecular_database.compound_count()} compounds.", "INFO")
 
-        # 7. Setup async loop
+        # 8. Setup async loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        # 8. Starting status
+        # 9. Initialize immune network with initial simulations
+        log_event("Initializing immune network with baseline simulations...", "INFO")
+        try:
+            # Run baseline simulation to validate network
+            immune_network.simulate(duration=10.0)
+            # Run immune challenge simulation
+            baseline_response = immune_network.simulate_immune_challenge(pathogen_load=1.0, duration=30.0)
+            log_event(f"Baseline immune challenge simulation completed. Peak response at t={baseline_response['peak_response_time']:.2f}", "INFO")
+            
+            # Analyze feedback loops to validate network structure
+            feedback_analysis = immune_network.analyze_feedback_loops()
+            stability_status = "stable" if feedback_analysis['stability'] else "unstable"
+            oscillatory_status = "oscillatory" if feedback_analysis['oscillatory'] else "non-oscillatory"
+            log_event(f"Immune network feedback analysis: {stability_status}, {oscillatory_status}", "INFO")
+        except Exception as e:
+            log_event(f"Warning: Initial immune network simulations failed: {str(e)}", "WARNING")
+            log_event("Continuing with limited immune modeling capabilities", "WARNING")
+
+        # 10. Starting status
         cycle_count = 1
-        log_event(f"🚀 Starting Quantum Nexus Drug Discovery System 🚀", "QUANTUM")
+        log_event(f"🚀 Starting Quantum Nexus Drug Discovery System with Immune-Gene Regulatory Network 🚀", "QUANTUM")
 
         # Main loop with enhanced error handling
         while True:
@@ -14143,9 +14189,9 @@ def enhanced_main_loop():
                 try:
                     # Set a reasonable timeout for cycle execution
                     cycle_future = asyncio.ensure_future(ai_manager.run_drug_discovery_cycle(optimizer))
-                    loop_result = loop.run_until_complete(asyncio.wait_for(cycle_future, timeout=180))  # Longer timeout for molecular computations
+                    loop_result = loop.run_until_complete(asyncio.wait_for(cycle_future, timeout=240))  # Longer timeout for molecular + immune computations
                 except asyncio.TimeoutError:
-                    log_event(f"Cycle execution timed out after 180 seconds", "ERROR")
+                    log_event(f"Cycle execution timed out after 240 seconds", "ERROR")
                     loop_result = {"status": "error", "error": "Execution timeout"}
                     # Cancel the future if it's still running
                     if not cycle_future.done():
@@ -14180,6 +14226,32 @@ def enhanced_main_loop():
                             log_event(f"Top candidate: ID={top_candidate.get('id', 'unknown')}, "
                                     f"Score={top_candidate.get('score', 0):.4f}, "
                                     f"Target={top_candidate.get('target', 'unknown')}", "INFO")
+                    
+                    # Track immune compounds analyzed
+                    immune_compounds = loop_result.get("immune_compounds_analyzed", 0)
+                    if immune_compounds > 0:
+                        system_status["immune_compounds_analyzed"] += immune_compounds
+                        log_event(f"Immune compounds analyzed this cycle: {immune_compounds}", "INFO")
+                        log_event(f"Total immune compounds analyzed: {system_status['immune_compounds_analyzed']}", "INFO")
+                    
+                    # Track top immunomodulators
+                    immunomodulators = loop_result.get("immunomodulators", [])
+                    if immunomodulators:
+                        # Add new compounds to the list
+                        system_status["top_immunomodulators"].extend(immunomodulators)
+                        
+                        # Sort by effect score and keep top 10
+                        system_status["top_immunomodulators"].sort(key=lambda x: x.get("effect_score", 0), reverse=True)
+                        system_status["top_immunomodulators"] = system_status["top_immunomodulators"][:10]
+                        
+                        log_event(f"New immunomodulatory compounds found: {len(immunomodulators)}", "INFO")
+                        
+                        # Log details of top immunomodulator
+                        if immunomodulators and isinstance(immunomodulators[0], dict):
+                            top_im = immunomodulators[0]
+                            log_event(f"Top immunomodulator: ID={top_im.get('compound_id', 'unknown')}, "
+                                     f"Profile={top_im.get('immune_profile', 'unknown')}, "
+                                     f"Score={top_im.get('effect_score', 0):.4f}", "INFO")
 
                     # Update research strategy effectiveness if research_planner exists
                     if hasattr(agent, 'research_planner') and hasattr(agent.action_log, '__len__') and len(agent.action_log) > 0:
@@ -14187,10 +14259,50 @@ def enhanced_main_loop():
                         result_data = {
                             "molecules_analyzed": loop_result.get("molecules_processed", 0),
                             "candidates_found": len(candidates),
+                            "immune_compounds_found": len(immunomodulators) if immunomodulators else 0,
                             "max_binding_affinity": max([c.get("score", 0) for c in candidates]) if candidates else 0,
                             "success": loop_result.get("success", False)
                         }
                         agent.research_planner.update_strategy_effectiveness(strategy_name, result_data)
+
+                # Run periodic immune network analysis on promising candidates
+                if cycle_count % 5 == 0 and hasattr(agent, "immune_analyzer") and hasattr(agent, "molecular_database"):
+                    log_event("Running periodic immune network analysis on promising candidates...", "INFO")
+                    try:
+                        # Get a batch of unanalyzed compounds
+                        candidates_to_analyze = []
+                        for candidate in system_status["promising_candidates"]:
+                            compound_id = candidate.get("id", "")
+                            if compound_id and compound_id not in agent.immune_analyzer.analyzed_compounds:
+                                candidates_to_analyze.append(candidate)
+                                if len(candidates_to_analyze) >= 5:  # Limit batch size
+                                    break
+                        
+                        # Analyze immune effects
+                        immune_results = []
+                        for candidate in candidates_to_analyze:
+                            compound_id = candidate.get("id", "")
+                            compound_data = agent.molecular_database.get_compound_data(compound_id)
+                            if compound_data:
+                                immune_result = agent.immune_analyzer.analyze_compound(compound_id, compound_data)
+                                immune_results.append(immune_result)
+                                log_event(f"Analyzed compound {compound_id} - immune profile: {immune_result['immune_profile']}", "INFO")
+                        
+                        # Update system status with new immune results
+                        if immune_results:
+                            # Update count
+                            system_status["immune_compounds_analyzed"] += len(immune_results)
+                            
+                            # Add to top immunomodulators
+                            system_status["top_immunomodulators"].extend(immune_results)
+                            
+                            # Sort by effect score and keep top 10
+                            system_status["top_immunomodulators"].sort(key=lambda x: x.get("effect_score", 0), reverse=True)
+                            system_status["top_immunomodulators"] = system_status["top_immunomodulators"][:10]
+                            
+                            log_event(f"Completed immune analysis of {len(immune_results)} compounds.", "INFO")
+                    except Exception as e:
+                        log_event(f"Error during immune analysis: {str(e)}", "WARNING")
 
                 # Progressive error recovery based on consecutive error count
                 if system_status["consecutive_errors"] >= system_status["max_consecutive_errors"]:
@@ -14233,6 +14345,12 @@ def enhanced_main_loop():
                                 agent.molecular_reasoning.exploration_weight = 0.6
                                 agent.molecular_reasoning.exploitation_weight = 0.4
                                 agent.molecular_reasoning.clear_temporary_cache()
+                            
+                            # Reset immune network
+                            if hasattr(agent, "immune_network"):
+                                # Run a baseline simulation to reset network state
+                                agent.immune_network.simulate(duration=10.0)
+                                log_event("Reset immune network to baseline state", "INFO")
 
                             log_event("Level 2 Recovery successful - research subsystems reset", "INFO")
                         except Exception as e:
@@ -14257,6 +14375,11 @@ def enhanced_main_loop():
                         if hasattr(agent, 'property_predictor'):
                             agent.property_predictor.use_fallback_methods = True
                             log_event("Switched to simplified molecular property prediction methods", "WARNING")
+                        
+                        # Disable immune network simulations in emergency mode
+                        if hasattr(agent, 'immune_analyzer'):
+                            agent.immune_analyzer.disable_complex_simulations = True
+                            log_event("Disabled complex immune network simulations in emergency mode", "WARNING")
 
                         # Reset recovery counter after maximum attempts to allow periodic retry
                         if system_status["recovery_attempts"] > 6:
@@ -14278,8 +14401,12 @@ def enhanced_main_loop():
                     try:
                         export_research_report(agent, system_status, cycle_count)
                         log_event(f"Research report exported at cycle {cycle_count}", "INFO")
+                        
+                        # Generate specialized immune analysis report
+                        export_immune_analysis_report(agent, system_status, cycle_count)
+                        log_event(f"Immune analysis report exported at cycle {cycle_count}", "INFO")
                     except Exception as e:
-                        log_event(f"Failed to export research report: {str(e)}", "WARNING")
+                        log_event(f"Failed to export research reports: {str(e)}", "WARNING")
 
                 # Sleep briefly for stability
                 time.sleep(0.5)
@@ -14289,6 +14416,7 @@ def enhanced_main_loop():
                 # Final save attempt and research report
                 save_drug_discovery_checkpoint(agent, model, cycle_count, system_status)
                 export_research_report(agent, system_status, cycle_count, "final")
+                export_immune_analysis_report(agent, system_status, cycle_count, "final")
                 break
 
             except Exception as e:
@@ -14302,6 +14430,7 @@ def enhanced_main_loop():
                     log_event("Critical unhandled exception threshold reached. Attempting final save before exit.", "CRITICAL")
                     save_drug_discovery_checkpoint(agent, model, cycle_count, system_status)
                     export_research_report(agent, system_status, cycle_count, "emergency")
+                    export_immune_analysis_report(agent, system_status, cycle_count, "emergency")
                     break
 
                 # Longer sleep after unhandled error
@@ -14313,7 +14442,6 @@ def enhanced_main_loop():
         return False
 
     return True
-
 
 def load_or_create_drug_discovery_model():
     """
@@ -15065,6 +15193,486 @@ class MolecularReasoningSystem:
             # Fallback to simple random choice
             fallback_action = random.choice(["screen_molecule", "generate_analogs", "optimize_properties"])
             return {"action": fallback_action, "error": str(e)[:200]}
+
+
+class ImmuneGeneRegulatoryNetwork:
+    """
+    A model of recursive coupling between immune signaling and gene regulation.
+    
+    This class implements a system where immune signals trigger changes in gene
+    expression, which in turn modulate the immune response, creating a recursive
+    feedback loop critical for homeostasis and response to pathogens.
+    """
+    
+    def __init__(self, num_genes=10, num_cytokines=5, num_receptors=3, seed=42):
+        """
+        Initialize the immune-gene regulatory network.
+        
+        Parameters:
+        -----------
+        num_genes : int
+            Number of genes in the regulatory network
+        num_cytokines : int
+            Number of immune signaling cytokines
+        num_receptors : int
+            Number of cell surface receptors
+        seed : int
+            Random seed for reproducibility
+        """
+        np.random.seed(seed)
+        
+        # Network dimensions
+        self.num_genes = num_genes
+        self.num_cytokines = num_cytokines
+        self.num_receptors = num_receptors
+        
+        # Initialize network weights
+        # How genes affect other genes
+        self.gene_gene_weights = np.random.normal(0, 0.5, (num_genes, num_genes))
+        # Set self-regulation to be slightly negative (homeostasis)
+        np.fill_diagonal(self.gene_gene_weights, -0.2 - np.random.rand(num_genes) * 0.3)
+        
+        # How cytokines affect gene expression
+        self.cytokine_gene_weights = np.random.normal(0, 0.7, (num_cytokines, num_genes))
+        
+        # How genes regulate cytokine production
+        self.gene_cytokine_weights = np.random.normal(0, 0.6, (num_genes, num_cytokines))
+        
+        # How receptors respond to cytokines
+        self.cytokine_receptor_weights = np.random.normal(0, 0.8, (num_cytokines, num_receptors))
+        
+        # How receptor activation affects gene expression
+        self.receptor_gene_weights = np.random.normal(0, 0.7, (num_receptors, num_genes))
+        
+        # State variables
+        self.gene_expression = np.zeros(num_genes)
+        self.cytokine_levels = np.zeros(num_cytokines)
+        self.receptor_activation = np.zeros(num_receptors)
+        
+        # Temporal dynamics parameters
+        self.gene_timescale = 1.0  # Slow changes in gene expression
+        self.cytokine_timescale = 0.5  # Faster cytokine dynamics
+        self.receptor_timescale = 0.2  # Rapid receptor activation/deactivation
+        
+        # Thresholds and saturation
+        self.gene_threshold = 0.2
+        self.cytokine_threshold = 0.1
+        self.receptor_threshold = 0.15
+        
+        # History tracking
+        self.history = {
+            'time': [],
+            'genes': [],
+            'cytokines': [],
+            'receptors': []
+        }
+    
+    def sigmoid(self, x, threshold=0, steepness=1):
+        """Sigmoid activation function with threshold"""
+        return 1 / (1 + np.exp(-steepness * (x - threshold)))
+    
+    def gene_regulation_dynamics(self, gene_expr, cytokine_levels, receptor_activation):
+        """Calculate gene expression changes based on current state"""
+        # Gene-gene interactions
+        gene_gene_effect = np.dot(self.gene_gene_weights, gene_expr)
+        
+        # Direct cytokine effects on genes
+        cytokine_gene_effect = np.dot(self.cytokine_gene_weights.T, cytokine_levels)
+        
+        # Receptor-mediated effects on genes
+        receptor_gene_effect = np.dot(self.receptor_gene_weights.T, receptor_activation)
+        
+        # Combine all effects
+        total_effect = gene_gene_effect + cytokine_gene_effect + receptor_gene_effect
+        
+        # Apply sigmoid activation with threshold
+        gene_regulation = self.sigmoid(total_effect, threshold=self.gene_threshold) - gene_expr
+        
+        return gene_regulation / self.gene_timescale
+    
+    def cytokine_dynamics(self, gene_expr, cytokine_levels):
+        """Calculate cytokine level changes based on gene expression"""
+        # Gene regulation of cytokine production
+        gene_cytokine_effect = np.dot(self.gene_cytokine_weights.T, gene_expr)
+        
+        # Apply activation function
+        cytokine_production = self.sigmoid(gene_cytokine_effect, threshold=self.cytokine_threshold)
+        
+        # Cytokine degradation (proportional to current levels)
+        cytokine_degradation = 0.3 * cytokine_levels
+        
+        return (cytokine_production - cytokine_degradation) / self.cytokine_timescale
+    
+    def receptor_dynamics(self, cytokine_levels, receptor_activation):
+        """Calculate receptor activation changes based on cytokine levels"""
+        # Cytokine binding to receptors
+        cytokine_receptor_effect = np.dot(self.cytokine_receptor_weights.T, cytokine_levels)
+        
+        # Apply activation function
+        receptor_activation_new = self.sigmoid(cytokine_receptor_effect, threshold=self.receptor_threshold)
+        
+        # Receptor deactivation rate
+        receptor_deactivation = 0.4 * receptor_activation
+        
+        return (receptor_activation_new - receptor_deactivation) / self.receptor_timescale
+    
+    def system_dynamics(self, t, state):
+        """Define the complete system dynamics for integration"""
+        # Unpack state vector
+        gene_expr = state[:self.num_genes]
+        cytokine_levels = state[self.num_genes:self.num_genes+self.num_cytokines]
+        receptor_activation = state[self.num_genes+self.num_cytokines:]
+        
+        # Calculate dynamics for each component
+        gene_rates = self.gene_regulation_dynamics(gene_expr, cytokine_levels, receptor_activation)
+        cytokine_rates = self.cytokine_dynamics(gene_expr, cytokine_levels)
+        receptor_rates = self.receptor_dynamics(cytokine_levels, receptor_activation)
+        
+        # Return concatenated derivatives
+        return np.concatenate([gene_rates, cytokine_rates, receptor_rates])
+    
+    def simulate(self, duration=20.0, dt=0.1, perturbation=None):
+        """
+        Simulate the system dynamics over time with optional perturbation
+        
+        Parameters:
+        -----------
+        duration : float
+            Total simulation time
+        dt : float
+            Time step for saving results
+        perturbation : dict, optional
+            Perturbation configuration with keys:
+            - 'type': 'gene', 'cytokine', or 'receptor'
+            - 'index': index of the component to perturb
+            - 'time': when to apply the perturbation
+            - 'magnitude': perturbation strength
+            - 'duration': how long the perturbation lasts
+        """
+        # Initial conditions
+        initial_state = np.concatenate([
+            self.gene_expression,
+            self.cytokine_levels,
+            self.receptor_activation
+        ])
+        
+        # Time points for saving results
+        t_eval = np.arange(0, duration, dt)
+        
+        # Solve without perturbation if none specified
+        if perturbation is None:
+            solution = solve_ivp(
+                self.system_dynamics,
+                [0, duration],
+                initial_state,
+                t_eval=t_eval,
+                method='RK45'
+            )
+            
+            # Extract and save results
+            self._save_simulation_results(solution.t, solution.y)
+            return solution
+        
+        # For perturbation case, handle with event-based simulation
+        perturb_time = perturbation.get('time', duration/2)
+        perturb_duration = perturbation.get('duration', 2.0)
+        perturb_end = min(perturb_time + perturb_duration, duration)
+        
+        # Solve up to perturbation
+        if perturb_time > 0:
+            solution1 = solve_ivp(
+                self.system_dynamics,
+                [0, perturb_time],
+                initial_state,
+                t_eval=np.arange(0, perturb_time, dt),
+                method='RK45'
+            )
+            
+            # Update state at perturbation time
+            perturbed_state = solution1.y[:, -1].copy()
+            
+            # Apply perturbation
+            perturb_type = perturbation.get('type', 'cytokine')
+            perturb_index = perturbation.get('index', 0)
+            perturb_magnitude = perturbation.get('magnitude', 1.0)
+            
+            if perturb_type == 'gene':
+                idx = perturb_index
+                perturbed_state[idx] += perturb_magnitude
+            elif perturb_type == 'cytokine':
+                idx = self.num_genes + perturb_index
+                perturbed_state[idx] += perturb_magnitude
+            elif perturb_type == 'receptor':
+                idx = self.num_genes + self.num_cytokines + perturb_index
+                perturbed_state[idx] += perturb_magnitude
+            
+            # Solve during perturbation
+            solution2 = solve_ivp(
+                self.system_dynamics,
+                [perturb_time, perturb_end],
+                perturbed_state,
+                t_eval=np.arange(perturb_time, perturb_end, dt),
+                method='RK45'
+            )
+            
+            # Solve after perturbation ends
+            if perturb_end < duration:
+                solution3 = solve_ivp(
+                    self.system_dynamics,
+                    [perturb_end, duration],
+                    solution2.y[:, -1],
+                    t_eval=np.arange(perturb_end, duration, dt),
+                    method='RK45'
+                )
+                
+                # Combine all solutions
+                all_times = np.concatenate([solution1.t, solution2.t, solution3.t])
+                all_states = np.concatenate([solution1.y, solution2.y, solution3.y], axis=1)
+            else:
+                # Just combine two solutions
+                all_times = np.concatenate([solution1.t, solution2.t])
+                all_states = np.concatenate([solution1.y, solution2.y], axis=1)
+            
+            # Save combined results
+            self._save_simulation_results(all_times, all_states)
+            
+            # Create a combined solution object for return
+            return {'t': all_times, 'y': all_states}
+    
+    def _save_simulation_results(self, times, states):
+        """Save simulation results to history"""
+        self.history['time'] = times
+        self.history['genes'] = states[:self.num_genes, :]
+        self.history['cytokines'] = states[self.num_genes:self.num_genes+self.num_cytokines, :]
+        self.history['receptors'] = states[self.num_genes+self.num_cytokines:, :]
+        
+        # Update current state to final values
+        self.gene_expression = self.history['genes'][:, -1]
+        self.cytokine_levels = self.history['cytokines'][:, -1]
+        self.receptor_activation = self.history['receptors'][:, -1]
+    
+    def plot_results(self, component='all', figsize=(12, 8)):
+        """Plot simulation results"""
+        times = self.history['time']
+        
+        if component == 'all' or component == 'genes':
+            plt.figure(figsize=figsize)
+            for i in range(self.num_genes):
+                plt.plot(times, self.history['genes'][i], label=f'Gene {i+1}')
+            plt.xlabel('Time')
+            plt.ylabel('Gene Expression')
+            plt.title('Gene Expression Dynamics')
+            plt.legend()
+            plt.grid(True)
+            plt.show()
+        
+        if component == 'all' or component == 'cytokines':
+            plt.figure(figsize=figsize)
+            for i in range(self.num_cytokines):
+                plt.plot(times, self.history['cytokines'][i], label=f'Cytokine {i+1}')
+            plt.xlabel('Time')
+            plt.ylabel('Cytokine Level')
+            plt.title('Cytokine Dynamics')
+            plt.legend()
+            plt.grid(True)
+            plt.show()
+        
+        if component == 'all' or component == 'receptors':
+            plt.figure(figsize=figsize)
+            for i in range(self.num_receptors):
+                plt.plot(times, self.history['receptors'][i], label=f'Receptor {i+1}')
+            plt.xlabel('Time')
+            plt.ylabel('Receptor Activation')
+            plt.title('Receptor Activation Dynamics')
+            plt.legend()
+            plt.grid(True)
+            plt.show()
+    
+    def analyze_feedback_loops(self):
+        """Analyze and identify key feedback loops in the network"""
+        # Calculate effective feedback matrix from genes back to genes
+        # through the full pathway: genes -> cytokines -> receptors -> genes
+        
+        # First pathway: genes -> cytokines -> receptors -> genes
+        pathway1 = np.dot(
+            np.dot(
+                np.dot(
+                    self.gene_cytokine_weights,
+                    self.cytokine_receptor_weights
+                ),
+                self.receptor_gene_weights
+            ),
+            np.eye(self.num_genes)
+        )
+        
+        # Second pathway: direct gene-gene interactions
+        pathway2 = self.gene_gene_weights
+        
+        # Third pathway: genes -> cytokines -> genes
+        pathway3 = np.dot(
+            self.gene_cytokine_weights,
+            self.cytokine_gene_weights
+        )
+        
+        # Combined effect (full recursive coupling)
+        total_feedback = pathway1 + pathway2 + pathway3
+        
+        # Calculate eigenvalues to assess stability and feedback strength
+        eigenvalues = np.linalg.eigvals(total_feedback)
+        
+        # Find the strongest feedback loops (largest absolute eigenvalues)
+        strongest_idx = np.argsort(np.abs(eigenvalues))[::-1]
+        
+        # Prepare results
+        feedback_analysis = {
+            'eigenvalues': eigenvalues,
+            'strongest_loops': strongest_idx[:3],  # Top 3 strongest loops
+            'stability': np.all(np.real(eigenvalues) < 0),  # Stable if all eigenvalues have negative real part
+            'oscillatory': np.any(np.imag(eigenvalues) != 0)  # Oscillatory if any eigenvalues have imaginary part
+        }
+        
+        # Print analysis summary
+        print("Feedback Loop Analysis:")
+        print(f"System Stability: {'Stable' if feedback_analysis['stability'] else 'Unstable'}")
+        print(f"Oscillatory Behavior: {'Yes' if feedback_analysis['oscillatory'] else 'No'}")
+        print("Strongest Feedback Eigenvalues:")
+        for i, idx in enumerate(feedback_analysis['strongest_loops']):
+            print(f"  {i+1}. {eigenvalues[idx]}")
+        
+        return feedback_analysis
+    
+    def simulate_immune_challenge(self, pathogen_load=1.0, duration=30.0):
+        """Simulate the response to an immune challenge"""
+        # Create a perturbation that affects multiple cytokines
+        # to simulate pathogen recognition
+        perturbation = {
+            'type': 'cytokine',
+            'index': 0,  # Will manually handle multiple cytokines
+            'time': 5.0,  # Start challenge after baseline period
+            'magnitude': pathogen_load,
+            'duration': 3.0  # Acute phase of challenge
+        }
+        
+        # Save initial state to reset after analysis
+        initial_genes = self.gene_expression.copy()
+        initial_cytokines = self.cytokine_levels.copy()
+        initial_receptors = self.receptor_activation.copy()
+        
+        # Modify cytokine weights to represent the specific response pattern
+        # We'll bias the first two cytokines to be pro-inflammatory
+        # and the last cytokine to be anti-inflammatory
+        pro_inflammatory_boost = np.zeros((self.num_genes, self.num_cytokines))
+        pro_inflammatory_boost[:, :2] = 0.5  # Boost first two cytokines
+        
+        # Store original weights
+        original_gene_cytokine_weights = self.gene_cytokine_weights.copy()
+        
+        # Modify weights for immune challenge
+        self.gene_cytokine_weights = self.gene_cytokine_weights + pro_inflammatory_boost
+        
+        # Run simulation with perturbation
+        solution = self.simulate(duration=duration, perturbation=perturbation)
+        
+        # Analyze response phases
+        response_phases = self.analyze_immune_response_phases()
+        
+        # Reset to initial state
+        self.gene_expression = initial_genes
+        self.cytokine_levels = initial_cytokines
+        self.receptor_activation = initial_receptors
+        self.gene_cytokine_weights = original_gene_cytokine_weights
+        
+        return response_phases
+    
+    def analyze_immune_response_phases(self):
+        """Analyze the phases of an immune response from simulation results"""
+        times = self.history['time']
+        cytokine_data = self.history['cytokines']
+        gene_data = self.history['genes']
+        
+        # Define key cytokine indices
+        pro_inflammatory_idx = [0, 1]  # First two cytokines
+        anti_inflammatory_idx = [self.num_cytokines - 1]  # Last cytokine
+        
+        # Calculate pro-inflammatory and anti-inflammatory signals
+        pro_signal = np.mean([cytokine_data[i] for i in pro_inflammatory_idx], axis=0)
+        anti_signal = np.mean([cytokine_data[i] for i in anti_inflammatory_idx], axis=0)
+        
+        # Identify phases
+        # Phase 1: Initial response (pro-inflammatory dominates)
+        # Phase 2: Peak response
+        # Phase 3: Resolution (anti-inflammatory increases)
+        # Phase 4: Homeostatic return
+        
+        # Find peak of pro-inflammatory response
+        peak_idx = np.argmax(pro_signal)
+        peak_time = times[peak_idx]
+        
+        # Find resolution phase start (when anti-inflammatory becomes significant)
+        resolution_threshold = 0.3 * np.max(anti_signal)
+        resolution_start_idx = np.where(anti_signal > resolution_threshold)[0]
+        resolution_start_idx = resolution_start_idx[resolution_start_idx > peak_idx][0] if any(resolution_start_idx > peak_idx) else -1
+        resolution_time = times[resolution_start_idx] if resolution_start_idx != -1 else np.nan
+        
+        # Find homeostatic return (when pro-inflammatory drops below threshold)
+        homeostasis_threshold = 0.2 * np.max(pro_signal)
+        homeostasis_idx = np.where(pro_signal < homeostasis_threshold)[0]
+        homeostasis_idx = homeostasis_idx[homeostasis_idx > peak_idx][0] if any(homeostasis_idx > peak_idx) else -1
+        homeostasis_time = times[homeostasis_idx] if homeostasis_idx != -1 else np.nan
+        
+        # Calculate gene regulation changes
+        gene_change = np.max(np.abs(gene_data - gene_data[:, 0].reshape(-1, 1)), axis=1)
+        most_affected_genes = np.argsort(gene_change)[::-1][:3]  # Top 3 most affected genes
+        
+        # Prepare results
+        phases = {
+            'initial_response_time': peak_time / 4,  # Estimate
+            'peak_response_time': peak_time,
+            'resolution_phase_time': resolution_time,
+            'homeostasis_time': homeostasis_time,
+            'pro_inflammatory_peak': np.max(pro_signal),
+            'anti_inflammatory_peak': np.max(anti_signal),
+            'most_affected_genes': most_affected_genes.tolist(),
+            'gene_regulation_magnitude': gene_change[most_affected_genes].tolist()
+        }
+        
+        # Print summary
+        print("\nImmune Response Analysis:")
+        print(f"Initial Response Phase: t = {phases['initial_response_time']:.2f}")
+        print(f"Peak Response: t = {phases['peak_response_time']:.2f} (magnitude: {phases['pro_inflammatory_peak']:.2f})")
+        print(f"Resolution Phase: t = {phases['resolution_phase_time']:.2f}")
+        print(f"Return to Homeostasis: t = {phases['homeostasis_time']:.2f}")
+        print("Most affected genes:", phases['most_affected_genes'])
+        
+        return phases
+
+
+def run_immune_gene_simulations():
+    """Run a series of simulations to demonstrate the recursive coupling"""
+    # Create model
+    model = ImmuneGeneRegulatoryNetwork(num_genes=12, num_cytokines=6, num_receptors=4, seed=42)
+    
+    # Run baseline simulation
+    print("Running baseline simulation...")
+    model.simulate(duration=10.0)
+    
+    # Plot baseline dynamics
+    print("Plotting baseline dynamics...")
+    model.plot_results()
+    
+    # Analyze feedback loops
+    print("\nAnalyzing feedback loops in the network...")
+    feedback_analysis = model.analyze_feedback_loops()
+    
+    # Simulate immune challenge
+    print("\nSimulating immune challenge response...")
+    response_data = model.simulate_immune_challenge(pathogen_load=1.5, duration=50.0)
+    
+    # Plot immune challenge results
+    print("Plotting immune challenge response...")
+    model.plot_results()
+    
+    return model, feedback_analysis, response_data            
 
 def main():
     """Main entry point with Flask dashboard and agent execution"""
