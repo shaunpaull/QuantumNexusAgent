@@ -16474,6 +16474,8 @@ def run_immune_gene_simulations():
 
     return model, feedback_analysis, response_data
 
+
+
 class MolecularDatabase:
     """
     Database for storing and retrieving molecular compounds and their properties.
@@ -23572,8 +23574,8 @@ def export_immune_analysis_report(agent, system_status, cycle_count, report_type
         try:
             feedback_analysis = agent.immune_network.analyze_feedback_loops()
             report["immune_network_status"] = {
-                "stability": feedback_analysis.get('stability', False),
-                "oscillatory": feedback_analysis.get('oscillatory', False),
+                "stability": int(feedback_analysis.get('stability', False)),  # Convert bool to int
+                "oscillatory": int(feedback_analysis.get('oscillatory', False)),  # Convert bool to int
                 "max_eigenvalue": float(feedback_analysis.get('max_eigenvalue', 0.0))
             }
         except Exception as e:
@@ -23582,7 +23584,25 @@ def export_immune_analysis_report(agent, system_status, cycle_count, report_type
     # Add top immunomodulators (limited to all identified ones, already capped at 10 in system_status)
     immunomodulators = system_status.get("top_immunomodulators", [])
     if immunomodulators:
-        report["top_immunomodulators"] = immunomodulators
+        # Make JSON-safe copies of the immunomodulators
+        json_safe_immunomodulators = []
+        for compound in immunomodulators:
+            safe_compound = {}
+            for k, v in compound.items():
+                if isinstance(v, bool):
+                    safe_compound[k] = int(v)  # Convert boolean to integer
+                elif isinstance(v, (int, float, str, list, dict)) or v is None:
+                    if isinstance(v, (list, dict)):
+                        # Handle potentially nested non-serializable objects within lists/dicts
+                        safe_compound[k] = json.loads(json.dumps(v, default=str))
+                    else:
+                        safe_compound[k] = v
+                else:
+                    # Convert any other types to string
+                    safe_compound[k] = str(v)
+            json_safe_immunomodulators.append(safe_compound)
+        
+        report["top_immunomodulators"] = json_safe_immunomodulators
 
     # Add immune profiles distribution
     immune_profiles = {}
@@ -23598,7 +23618,7 @@ def export_immune_analysis_report(agent, system_status, cycle_count, report_type
     # Write report to file
     try:
         with open(report_path, 'w') as f:
-            json.dump(report, f, indent=2)
+            json.dump(report, f, indent=2, default=str)  # Use default=str as a fallback
 
         # If this is final or emergency report, also create CSV version of immunomodulators
         if report_type in ["final", "emergency"] and immunomodulators:
@@ -23629,7 +23649,6 @@ def export_immune_analysis_report(agent, system_status, cycle_count, report_type
     except Exception as e:
         log_event(f"Error exporting immune analysis report: {str(e)}", "ERROR")
         return None
-
 
 def main():
     """Main entry point with Flask dashboard and agent execution"""
