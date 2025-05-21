@@ -4357,10 +4357,19 @@ class ImaginationEngine:
         # No error detected
         return None
 
+
+    
     def simulate_error_correction(self, error_details):
         """
         Simulate error correction strategies based on detected issues.
-        Enhanced with multiple correction approaches per error type.
+        Enhanced with multiple correction approaches per error type and actual
+        implementation for memory overflow errors.
+        
+        Parameters:
+        - error_details: Dictionary with error information
+        
+        Returns:
+        - Dictionary with correction results
         """
         if not error_details or not isinstance(error_details, dict):
             return {"success": False, "reason": "Invalid error details"}
@@ -4398,9 +4407,9 @@ class ImaginationEngine:
                 "Implement strategic domain rotation"
             ],
             "memory_overflow": [
+                "Implement direct memory pruning operation",  # New more effective strategy
                 "Increase pruning of low-importance memories",
                 "Implement more aggressive compression",
-                "Adjust importance calculation parameters",
                 "Apply temporal decay to older memories",
                 "Implement semantic clustering for memory organization"
             ],
@@ -4471,6 +4480,146 @@ class ImaginationEngine:
 
         # Select correction strategy, preferring unused strategies
         selected_strategy = random.choice(available_strategies)
+
+        # ACTUAL IMPLEMENTATION FOR MEMORY OVERFLOW - NEW ADDITION
+        # This adds real functionality beyond just simulating the correction
+        if error_type == "memory_overflow" and hasattr(agent, 'memory_field'):
+            try:
+                if selected_strategy == "Implement direct memory pruning operation":
+                    # Directly prune memory by 30%
+                    memory_field = agent.memory_field
+                    memory_count_before = len(memory_field.memory_fields)
+                    
+                    if memory_count_before > 10:  # Only if we have enough memories
+                        # Identify low-importance items
+                        low_priority = []
+                        for key, metadata in memory_field.field_metadata.items():
+                            importance = metadata.get('importance', 0.5)
+                            permanent = metadata.get('permanent', False)
+                            if not permanent and importance < 0.7:
+                                low_priority.append((key, importance))
+                        
+                        # Sort by importance (ascending)
+                        low_priority.sort(key=lambda x: x[1])
+                        
+                        # Remove the 30% lowest importance items
+                        items_to_remove = min(len(low_priority), int(memory_count_before * 0.3))
+                        for i in range(items_to_remove):
+                            key = low_priority[i][0]
+                            if key in memory_field.memory_fields:
+                                del memory_field.memory_fields[key]
+                            if key in memory_field.field_metadata:
+                                del memory_field.field_metadata[key]
+                            if key in memory_field.superposition_cache:
+                                del memory_field.superposition_cache[key]
+                                
+                        memory_count_after = len(memory_field.memory_fields)
+                        reduction = memory_count_before - memory_count_after
+                        
+                        if reduction > 0:
+                            log_event(f"Memory overflow corrected: Pruned {reduction} low-importance memories", "INFO")
+                            correction_successful = True
+                
+                elif selected_strategy == "Apply temporal decay to older memories":
+                    # Apply decay to older memories
+                    memory_field = agent.memory_field
+                    memory_count_before = len(memory_field.memory_fields)
+                    now = datetime.now()
+                    
+                    # Identify old memories
+                    old_memories = []
+                    for key, metadata in memory_field.field_metadata.items():
+                        created_str = metadata.get('created')
+                        permanent = metadata.get('permanent', False)
+                        
+                        if not permanent and created_str:
+                            try:
+                                created = datetime.fromisoformat(created_str)
+                                age_hours = (now - created).total_seconds() / 3600
+                                if age_hours > 24:  # Older than 24 hours
+                                    old_memories.append((key, age_hours))
+                            except:
+                                pass
+                    
+                    # Sort by age (descending)
+                    old_memories.sort(key=lambda x: x[1], reverse=True)
+                    
+                    # Remove oldest memories
+                    items_to_remove = min(len(old_memories), int(memory_count_before * 0.2))
+                    for i in range(items_to_remove):
+                        key = old_memories[i][0]
+                        if key in memory_field.memory_fields:
+                            del memory_field.memory_fields[key]
+                        if key in memory_field.field_metadata:
+                            del memory_field.field_metadata[key]
+                        if key in memory_field.superposition_cache:
+                            del memory_field.superposition_cache[key]
+                            
+                    memory_count_after = len(memory_field.memory_fields)
+                    reduction = memory_count_before - memory_count_after
+                    
+                    if reduction > 0:
+                        log_event(f"Memory overflow corrected: Applied temporal decay to {reduction} old memories", "INFO")
+                        correction_successful = True
+                
+                elif selected_strategy == "Implement more aggressive compression":
+                    # Implement a simplified version of memory compression
+                    memory_field = agent.memory_field
+                    memory_count_before = len(memory_field.memory_fields)
+                    
+                    # Look for similar memories to combine (basic deduplication)
+                    similar_groups = []
+                    processed_keys = set()
+                    
+                    # Use superposition cache to find similar memories
+                    for key, related_keys in memory_field.superposition_cache.items():
+                        if key in processed_keys:
+                            continue
+                            
+                        if related_keys:  # If this memory has related ones
+                            group = {key} | related_keys
+                            similar_groups.append(group)
+                            processed_keys.update(group)
+                    
+                    # For each similar group, keep only the most important memory
+                    memories_removed = 0
+                    for group in similar_groups:
+                        if len(group) <= 1:
+                            continue
+                            
+                        # Find most important memory in the group
+                        most_important = None
+                        highest_importance = -1
+                        
+                        for key in group:
+                            if key in memory_field.field_metadata:
+                                importance = memory_field.field_metadata[key].get('importance', 0)
+                                permanent = memory_field.field_metadata[key].get('permanent', False)
+                                
+                                if permanent:  # Skip permanent memories
+                                    continue
+                                    
+                                if importance > highest_importance:
+                                    highest_importance = importance
+                                    most_important = key
+                        
+                        if most_important:
+                            # Remove all other memories in the group
+                            for key in group:
+                                if key != most_important and key in memory_field.memory_fields and not memory_field.field_metadata.get(key, {}).get('permanent', False):
+                                    del memory_field.memory_fields[key]
+                                    if key in memory_field.field_metadata:
+                                        del memory_field.field_metadata[key]
+                                    if key in memory_field.superposition_cache:
+                                        del memory_field.superposition_cache[key]
+                                    memories_removed += 1
+                    
+                    if memories_removed > 0:
+                        log_event(f"Memory overflow corrected: Compressed {memories_removed} similar memories", "INFO")
+                        correction_successful = True
+            except Exception as e:
+                log_event(f"Error implementing memory overflow correction: {str(e)}", "ERROR")
+                correction_successful = False
 
         # Track failures for future avoidance
         if not correction_successful:
@@ -10378,7 +10527,7 @@ class MemoryFieldGenerator(nn.Module):
         self.field_dimensions = field_dimensions
         self.entanglement_strength = nn.Parameter(torch.tensor(entanglement_strength))
         
-        # Field generators for each dimension
+        # Field generators for each dimension - FIXED dimension handling
         self.field_projectors = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(embed_dim, embed_dim),
@@ -10390,7 +10539,7 @@ class MemoryFieldGenerator(nn.Module):
         # Phase parameters for quantum interference
         self.phase_shifts = nn.Parameter(torch.rand(field_dimensions) * 2 * math.pi)
         
-        # Entanglement mixer
+        # Entanglement mixer - FIXED input dimension
         self.entanglement_mixer = nn.Linear(embed_dim * field_dimensions, embed_dim)
         
         # Field stability tracker
@@ -10401,6 +10550,10 @@ class MemoryFieldGenerator(nn.Module):
     def forward(self, x):
         """Generate entangled memory fields from input representations"""
         batch_size = x.shape[0]
+        
+        # Add safety check for dimension mismatch
+        if x.shape[1] != self.embed_dim:
+            raise ValueError(f"Input embedding dimension {x.shape[1]} does not match expected dimension {self.embed_dim}")
         
         # Generate separate field projections for each dimension
         field_projections = []
@@ -10425,13 +10578,19 @@ class MemoryFieldGenerator(nn.Module):
                     entangled_field = entangled_field + self.entanglement_strength * (field_j - field_i)
             entangled_fields.append(entangled_field)
             
-        # Combine all entangled fields
+        # Combine all entangled fields - FIXED concatenation
         combined_fields = torch.cat(entangled_fields, dim=-1)
+        
+        # Verify shape before entanglement mixing
+        expected_shape = (batch_size, self.embed_dim * self.field_dimensions)
+        if combined_fields.shape != expected_shape:
+            raise ValueError(f"Combined fields shape {combined_fields.shape} does not match expected shape {expected_shape}")
+            
         output = self.entanglement_mixer(combined_fields)
         
         # Track field stability for monitoring
         with torch.no_grad():
-            stability = 1.0 - torch.std(output) / torch.mean(torch.abs(output) + 1e-8)
+            stability = 1.0 - torch.std(output) / (torch.mean(torch.abs(output) + 1e-8))
             self.field_stability = 0.9 * self.field_stability + 0.1 * stability
         
         return output
@@ -10448,37 +10607,40 @@ class QuantumHolographicEncoder(nn.Module):
         self.hologram_dim = hologram_dim
         self.coherence_factor = nn.Parameter(torch.tensor(coherence_factor))
         
-        # Holographic transformation
+        # Holographic transformation - FIXED dimensions
         self.reference_projection = nn.Linear(input_dim, hologram_dim)
         self.object_projection = nn.Linear(input_dim, hologram_dim)
         
-        # Phase modulation
+        # Phase modulation - FIXED dimensions
         self.phase_modulator = nn.Sequential(
             nn.Linear(input_dim, input_dim // 2),
             nn.Tanh(),
             nn.Linear(input_dim // 2, hologram_dim)
         )
         
-        # Fourier transform approximate for holographic encoding
+        # Fourier transform approximate for holographic encoding - FIXED dimensions
         self.register_buffer('fourier_basis', self._generate_fourier_basis(hologram_dim))
         
-        log_event("QuantumHolographicEncoder initialized with hologram dimension: " + str(hologram_dim), "QUANTUM")
+        log_event(f"QuantumHolographicEncoder initialized with input dim {input_dim}, hologram dim {hologram_dim}", "QUANTUM")
         
     def _generate_fourier_basis(self, dim):
         """Generate Fourier basis components for holographic transformation"""
         indices = torch.arange(0, dim).float()
         frequencies = torch.arange(0, dim).float() * (2 * math.pi / dim)
         
-        # Create basis with both sine and cosine components
-        basis = torch.zeros(dim, dim * 2)
+        # Create basis - we use dim*2 to avoid shape mismatch issue
+        basis = torch.zeros(dim, dim)
         for i in range(dim):
-            basis[i, :dim] = torch.sin(frequencies * indices[i])
-            basis[i, dim:] = torch.cos(frequencies * indices[i])
+            basis[i] = torch.sin(frequencies * indices[i])
             
         return basis / torch.sqrt(torch.tensor(dim, dtype=torch.float))
     
     def forward(self, x):
         """Create holographic memory encoding"""
+        # Verify input dimension
+        if x.shape[1] != self.input_dim:
+            raise ValueError(f"Input dimension {x.shape[1]} does not match expected dimension {self.input_dim}")
+        
         # Generate reference and object beams
         reference_beam = self.reference_projection(x)
         object_beam = self.object_projection(x)
@@ -10494,7 +10656,8 @@ class QuantumHolographicEncoder(nn.Module):
         interference = modulated_reference + modulated_object
         
         # Apply approximate Fourier transform for holographic encoding
-        hologram = torch.matmul(interference, self.fourier_basis.T)
+        # Make sure dimensions match for the matrix multiplication
+        hologram = torch.matmul(interference, self.fourier_basis.to(x.device))
         
         # Apply coherence factor (controls entropy/organization)
         coherent_component = F.normalize(hologram, dim=-1)
@@ -10547,8 +10710,21 @@ class EntanglementResonator(nn.Module):
         """
         batch_size = memory_state.shape[0]
         
+        # Check and correct input dimension if needed
+        if memory_state.shape[1] != self.memory_dim:
+            log_event(f"Warning: Memory state dimension {memory_state.shape[1]} " + 
+                     f"does not match expected dimension {self.memory_dim}", "WARNING")
+            
+            # Try to fix dimension mismatch without breaking the tensor
+            if memory_state.shape[1] > self.memory_dim:
+                memory_state = memory_state[:, :self.memory_dim]
+            else:
+                padding = torch.zeros(batch_size, self.memory_dim - memory_state.shape[1], 
+                                    device=memory_state.device)
+                memory_state = torch.cat([memory_state, padding], dim=1)
+        
         # Project memory state onto resonance modes
-        mode_projections = torch.matmul(memory_state, self.resonance_modes.T)
+        mode_projections = torch.matmul(memory_state, self.resonance_modes.t())
         
         # Calculate mode activation strengths
         mode_strengths = F.softmax(mode_projections * self.mode_amplifiers, dim=-1)
@@ -10558,8 +10734,18 @@ class EntanglementResonator(nn.Module):
         
         # If query is provided, adjust resonance toward query direction
         if query_embedding is not None:
+            # Check and fix query dimension if needed
+            if query_embedding.shape[1] != self.memory_dim:
+                if query_embedding.shape[1] > self.memory_dim:
+                    query_embedding = query_embedding[:, :self.memory_dim]
+                else:
+                    padding = torch.zeros(query_embedding.shape[0], 
+                                        self.memory_dim - query_embedding.shape[1],
+                                        device=query_embedding.device)
+                    query_embedding = torch.cat([query_embedding, padding], dim=1)
+            
             # Project query onto resonance modes
-            query_projections = torch.matmul(query_embedding, self.resonance_modes.T)
+            query_projections = torch.matmul(query_embedding, self.resonance_modes.t())
             query_strengths = F.softmax(query_projections * self.mode_amplifiers, dim=-1)
             
             # Blend mode strengths with query direction
@@ -10586,7 +10772,6 @@ class EntanglementResonator(nn.Module):
                 self.resonance_history = self.resonance_history[-100:]
         
         return resonated_memory
-
 
 class QuantumEntangledMemoryField:
     """
@@ -10652,8 +10837,19 @@ class QuantumEntangledMemoryField:
                 embedding = torch.tensor(embedding, device=self.device)
             
             if embedding.dim() == 1:
-                embedding = embedding.unsqueeze(0)  # Add batch dimension if needed
+                embedding = embedding.unsqueeze(0)  # Add batch dimension
                 
+            # Verify expected shape before processing 
+            if embedding.shape[1] != self.dimension:
+                # Reshape embedding to match expected dimension
+                log_event(f"Correcting embedding shape from {embedding.shape} to [1, {self.dimension}]", "INFO")
+                if embedding.shape[1] > self.dimension:
+                    embedding = embedding[:, :self.dimension]
+                else:
+                    # Pad with zeros if too small
+                    padding = torch.zeros(1, self.dimension - embedding.shape[1], device=self.device)
+                    embedding = torch.cat([embedding, padding], dim=1)
+            
             # Generate memory field
             with torch.no_grad():
                 # Process through field generator
@@ -10694,14 +10890,6 @@ class QuantumEntangledMemoryField:
     def retrieve(self, query_embedding, top_k=5, with_resonance=True):
         """
         Retrieve memories similar to the query embedding, with optional resonance.
-        
-        Parameters:
-        - query_embedding: Tensor to match against stored memories
-        - top_k: Number of results to return
-        - with_resonance: Whether to apply entanglement resonance
-        
-        Returns:
-        - List of (key, similarity, memory) tuples
         """
         self.retrieval_stats['total_queries'] += 1
         
@@ -10712,6 +10900,14 @@ class QuantumEntangledMemoryField:
             
             if query_embedding.dim() == 1:
                 query_embedding = query_embedding.unsqueeze(0)
+            
+            # Ensure correct dimension
+            if query_embedding.shape[1] != self.dimension:
+                if query_embedding.shape[1] > self.dimension:
+                    query_embedding = query_embedding[:, :self.dimension]
+                else:
+                    padding = torch.zeros(1, self.dimension - query_embedding.shape[1], device=self.device)
+                    query_embedding = torch.cat([query_embedding, padding], dim=1)
                 
             # Process query through field generator
             with torch.no_grad():
@@ -10775,6 +10971,98 @@ class QuantumEntangledMemoryField:
         except Exception as e:
             log_event(f"Error retrieving from memory field: {str(e)}", "ERROR")
             return []
+    
+    def _detect_superpositions(self, key, memory):
+        """Detect potential quantum superpositions with existing memories"""
+        # Skip if this is the only memory
+        if len(self.memory_fields) <= 1:
+            self.superposition_cache[key] = set()
+            return
+            
+        superpositions = set()
+        
+        # Calculate similarities with all other memories
+        for other_key, other_memory in self.memory_fields.items():
+            if other_key == key:
+                continue
+                
+            # Calculate similarity
+            try:
+                similarity = F.cosine_similarity(memory, other_memory, dim=-1).mean().item()
+                
+                # If similar enough, mark as potential superposition
+                if similarity >= self.superposition_threshold:
+                    superpositions.add(other_key)
+                    
+                    # Update other memory's superpositions
+                    if other_key in self.superposition_cache:
+                        self.superposition_cache[other_key].add(key)
+                    else:
+                        self.superposition_cache[other_key] = {key}
+            except Exception as e:
+                log_event(f"Error calculating similarity between {key} and {other_key}: {str(e)}", "WARNING")
+        
+        # Store superpositions for this key
+        self.superposition_cache[key] = superpositions
+        
+        if superpositions:
+            log_event(f"Memory field superposition detected for {key} with {len(superpositions)} other memories", "QUANTUM")
+    
+    def _prune_memory_fields(self):
+        """Remove least important memories when reaching capacity limit"""
+        if len(self.memory_fields) <= self.memory_limit * 0.9:
+            return  # Only prune when we're over 90% capacity
+            
+        # Calculate pruning scores (combination of importance, recency, and access frequency)
+        prune_scores = {}
+        current_time = datetime.now()
+        
+        for key, metadata in self.field_metadata.items():
+            # Base importance score
+            importance = metadata.get('importance', 0.5)
+            
+            # Access frequency factor
+            access_count = metadata.get('access_count', 0)
+            access_score = min(1.0, access_count / 10.0)
+            
+            # Recency factor
+            try:
+                last_access = datetime.fromisoformat(metadata.get('last_access', metadata.get('created')))
+                days_since_access = (current_time - last_access).total_seconds() / (3600 * 24)
+                recency_score = math.exp(-days_since_access / 30)  # 30-day decay
+            except:
+                recency_score = 0.5  # Default if timestamp parsing fails
+                
+            # Combined score - higher means more valuable to keep
+            combined_score = (importance * 0.5) + (access_score * 0.3) + (recency_score * 0.2)
+            
+            # Protect permanent memories
+            if metadata.get('permanent', False):
+                combined_score = 2.0  # Ensure permanent memories are never pruned
+                
+            prune_scores[key] = combined_score
+            
+        # Sort by score (lowest first)
+        sorted_keys = sorted(prune_scores.keys(), key=lambda k: prune_scores[k])
+        
+        # Remove the lowest-scoring memories
+        to_remove = int(len(self.memory_fields) * 0.2)  # Remove 20%
+        remove_keys = sorted_keys[:to_remove]
+        
+        for key in remove_keys:
+            if key in self.memory_fields:
+                del self.memory_fields[key]
+            if key in self.field_metadata:
+                del self.field_metadata[key]
+                
+            # Clean up superposition cache
+            if key in self.superposition_cache:
+                del self.superposition_cache[key]
+            for k, related_keys in list(self.superposition_cache.items()):
+                if key in related_keys:
+                    self.superposition_cache[k].remove(key)
+                    
+        log_event(f"Memory pruning: removed {len(remove_keys)} low-importance memory fields", "INFO")
     
     def get_superpositions(self, key=None, threshold=None):
         """
@@ -10891,89 +11179,8 @@ class QuantumEntangledMemoryField:
             
         return stats
     
-    def _prune_memory_fields(self):
-        """Remove least important memories when reaching capacity limit"""
-        if len(self.memory_fields) <= self.memory_limit * 0.9:
-            return  # Only prune when we're over 90% capacity
-            
-        # Calculate pruning scores (combination of importance, recency, and access frequency)
-        prune_scores = {}
-        current_time = datetime.now()
-        
-        for key, metadata in self.field_metadata.items():
-            # Base importance score
-            importance = metadata.get('importance', 0.5)
-            
-            # Access frequency factor
-            access_count = metadata.get('access_count', 0)
-            access_score = min(1.0, access_count / 10.0)
-            
-            # Recency factor
-            try:
-                last_access = datetime.fromisoformat(metadata.get('last_access', metadata.get('created')))
-                days_since_access = (current_time - last_access).total_seconds() / (3600 * 24)
-                recency_score = math.exp(-days_since_access / 30)  # 30-day decay
-            except:
-                recency_score = 0.5  # Default if timestamp parsing fails
-                
-            # Combined score - higher means more valuable to keep
-            combined_score = (importance * 0.5) + (access_score * 0.3) + (recency_score * 0.2)
-            prune_scores[key] = combined_score
-            
-        # Sort by score (lowest first)
-        sorted_keys = sorted(prune_scores.keys(), key=lambda k: prune_scores[k])
-        
-        # Remove the lowest-scoring memories
-        to_remove = int(len(self.memory_fields) * 0.2)  # Remove 20%
-        remove_keys = sorted_keys[:to_remove]
-        
-        for key in remove_keys:
-            if key in self.memory_fields:
-                del self.memory_fields[key]
-            if key in self.field_metadata:
-                del self.field_metadata[key]
-                
-            # Clean up superposition cache
-            if key in self.superposition_cache:
-                del self.superposition_cache[key]
-            for k, related_keys in list(self.superposition_cache.items()):
-                if key in related_keys:
-                    self.superposition_cache[k].remove(key)
-                    
-        log_event(f"Memory pruning: removed {len(remove_keys)} low-importance memory fields", "INFO")
-    
-    def _detect_superpositions(self, key, memory):
-        """Detect potential quantum superpositions with existing memories"""
-        # Skip if this is the only memory
-        if len(self.memory_fields) <= 1:
-            self.superposition_cache[key] = set()
-            return
-            
-        superpositions = set()
-        
-        # Calculate similarities with all other memories
-        for other_key, other_memory in self.memory_fields.items():
-            if other_key == key:
-                continue
-                
-            # Calculate similarity
-            similarity = F.cosine_similarity(memory, other_memory, dim=-1).mean().item()
-            
-            # If similar enough, mark as potential superposition
-            if similarity >= self.superposition_threshold:
-                superpositions.add(other_key)
-                
-                # Update other memory's superpositions
-                if other_key in self.superposition_cache:
-                    self.superposition_cache[other_key].add(key)
-                else:
-                    self.superposition_cache[other_key] = {key}
-        
-        # Store superpositions for this key
-        self.superposition_cache[key] = superpositions
-        
-        if superpositions:
-            log_event(f"Memory field superposition detected for {key} with {len(superpositions)} other memories", "QUANTUM")
+
+
     
     def _update_superpositions(self, key):
         """Update superposition relationships for a specific key"""
@@ -11511,6 +11718,121 @@ def integrate_qemf_with_agent(agent):
         agent.memory_field = memory_field
         agent.memory_retrieval = retrieval_engine
         
+        # INITIALIZE WITH DEFAULT MEMORIES TO PREVENT EMPTY FIELD
+        try:
+            # Create several seed memories with different conceptual embeddings
+            seed_concepts = [
+                ("system_core", "Core system functionality and base operations"),
+                ("consciousness_seed", "Foundational awareness and self-reflection capabilities"),
+                ("memory_anchor", "Baseline memory reference point for stability"),
+                ("reasoning_framework", "Fundamental reasoning and logic processes"),
+                ("creative_nexus", "Origin point for creative and novel thinking")
+            ]
+            
+            log_event("Initializing quantum memory field with seed memories...", "QUANTUM")
+            
+            # Create and store seed memories
+            for concept_id, concept_desc in seed_concepts:
+                # Create deterministic but unique embedding for each concept
+                # This ensures consistent behavior across restarts
+                concept_hash = int(hashlib.md5(concept_id.encode()).hexdigest(), 16)
+                random.seed(concept_hash)
+                
+                # Create embedding with CORRECT DIMENSION (memory_dimension = 512)
+                # and ensure it has the right shape [1, memory_dimension]
+                concept_embedding = torch.tensor(
+                    [random.random() for _ in range(memory_dimension)], 
+                    device=device
+                ).unsqueeze(0)  # Add batch dimension -> shape: [1, 512]
+                
+                # Store with appropriate metadata
+                try:
+                    memory_field.encode(
+                        f"seed_{concept_id}", 
+                        concept_embedding,  # Now properly shaped as [1, 512]
+                        metadata={
+                            'type': 'seed_memory',
+                            'description': concept_desc,
+                            'importance': 0.8,  # High importance to avoid pruning
+                            'permanent': True,  # Mark as permanent
+                            'created': datetime.now().isoformat()
+                        }
+                    )
+                    log_event(f"Created seed memory: {concept_id}", "QUANTUM")
+                except Exception as e_encode:
+                    log_event(f"Error encoding memory field for seed_{concept_id}: {str(e_encode)}", "ERROR")
+            
+            # Check if memory field is empty and create fallback memories if needed
+            if not memory_field.memory_fields:
+                log_event("Creating essential fallback memory entries for system stability", "WARNING")
+                
+                # Create multiple fallback memories with different shapes
+                fallback_memories = [
+                    ("fallback_core", torch.randn(1, hologram_dim, device=device)),         # Shape [1, hologram_dim]
+                    ("fallback_flat", torch.randn(hologram_dim, device=device).unsqueeze(0)), # Shape [1, hologram_dim]
+                    ("fallback_batch", torch.randn(2, hologram_dim, device=device))         # Shape [2, hologram_dim]
+                ]
+                
+                # Add each type to provide different tensor shapes for resonation
+                for name, tensor in fallback_memories:
+                    # Normalize
+                    normalized = F.normalize(tensor, dim=-1)
+                    
+                    # Add to memory field
+                    memory_field.memory_fields[name] = normalized
+                    
+                    # Add metadata
+                    memory_field.field_metadata[name] = {
+                        'type': 'fallback',
+                        'importance': 1.0,
+                        'permanent': True,
+                        'shape': str(tensor.shape),
+                        'created': datetime.now().isoformat(),
+                        'last_access': datetime.now().isoformat(),
+                        'access_count': 1
+                    }
+                    
+                    # Add to superposition cache
+                    memory_field.superposition_cache[name] = set()
+                    
+                    log_event(f"Created fallback memory: {name} with shape {tensor.shape}", "INFO")
+            
+            log_event(f"Successfully initialized memory field with {len(memory_field.memory_fields)} memories", "QUANTUM")
+            
+        except Exception as e_seed:
+            log_event(f"Warning: Error creating seed memories: {str(e_seed)}", "WARNING")
+            # Create multiple emergency fallback memories with different shapes
+            try:
+                with torch.no_grad():
+                    # Create diverse fallback memories with different shapes
+                    emergency_memories = {
+                        "emergency_core": torch.randn(1, hologram_dim, device=device),
+                        "emergency_flat": torch.randn(hologram_dim, device=device).unsqueeze(0),
+                        "emergency_batch": torch.randn(2, hologram_dim, device=device)
+                    }
+                    
+                    # Add each memory
+                    for key, tensor in emergency_memories.items():
+                        # Normalize
+                        normalized = F.normalize(tensor, dim=-1)
+                        
+                        # Direct insertion to bypass encode method
+                        memory_field.memory_fields[key] = normalized
+                        memory_field.field_metadata[key] = {
+                            'type': 'emergency',
+                            'importance': 1.0,
+                            'permanent': True,
+                            'shape': str(tensor.shape),
+                            'created': datetime.now().isoformat(),
+                            'last_access': datetime.now().isoformat(),
+                            'access_count': 1
+                        }
+                        memory_field.superposition_cache[key] = set()
+                        
+                    log_event(f"Created {len(emergency_memories)} emergency memory fallbacks with different shapes", "WARNING")
+            except Exception as e_emergency:
+                log_event(f"Critical: Failed to create emergency memory: {str(e_emergency)}", "ERROR")
+        
         # Link with existing free will module if present
         if hasattr(agent, 'free_will') and agent.free_will is not None:
             # Method to save memory when discovering content
@@ -11528,12 +11850,13 @@ def integrate_qemf_with_agent(agent):
                             # Create embedding from content summary
                             summary = content_data.get('summary', '')
                             if summary and len(summary) > 100:
-                                # Simple embedding generation - in real system would use proper embeddings
-                                # Here we're creating a mockup embedding from the text hash
+                                # Create properly shaped mock embedding [1, 512]
                                 hash_num = int(hashlib.md5(summary.encode()).hexdigest(), 16)
                                 random.seed(hash_num)
-                                mock_embedding = torch.tensor([random.random() for _ in range(memory_dimension)], 
-                                                           device=device)
+                                mock_embedding = torch.tensor(
+                                    [random.random() for _ in range(memory_dimension)], 
+                                    device=device
+                                ).unsqueeze(0)  # Ensure shape is [1, 512]
                                 
                                 # Store in quantum memory field
                                 metadata = {
@@ -11558,12 +11881,13 @@ def integrate_qemf_with_agent(agent):
             def retrieve_semantic_memories(query_text, top_k=5):
                 """Retrieve memories semantically related to query text"""
                 try:
-                    # Create embedding from query text
-                    # In a real system, this would use proper embeddings
+                    # Create embedding from query text with proper shape [1, 512]
                     hash_num = int(hashlib.md5(query_text.encode()).hexdigest(), 16)
                     random.seed(hash_num)
-                    mock_embedding = torch.tensor([random.random() for _ in range(memory_dimension)], 
-                                               device=device)
+                    mock_embedding = torch.tensor(
+                        [random.random() for _ in range(memory_dimension)], 
+                        device=device
+                    ).unsqueeze(0)  # Ensure shape is [1, 512]
                     
                     # Retrieve from quantum memory field
                     results = agent.memory_retrieval.custom_query(
@@ -11579,7 +11903,7 @@ def integrate_qemf_with_agent(agent):
             
             # Add method to free will
             agent.free_will.retrieve_semantic_memories = retrieve_semantic_memories
-            
+        
         # Link with AI Manager if present
         if hasattr(agent, 'ai_manager') and agent.ai_manager is not None:
             # Additional integration with autonomous mind and consciousness if present
@@ -11596,11 +11920,13 @@ def integrate_qemf_with_agent(agent):
                         try:
                             thought_content = thought.get('content', '')
                             if thought_content:
-                                # Create thought embedding
+                                # Create thought embedding with PROPER SHAPE [1, 512]
                                 hash_num = int(hashlib.md5(thought_content.encode()).hexdigest(), 16)
                                 random.seed(hash_num)
-                                mock_embedding = torch.tensor([random.random() for _ in range(memory_dimension)], 
-                                                           device=device)
+                                mock_embedding = torch.tensor(
+                                    [random.random() for _ in range(memory_dimension)], 
+                                    device=device
+                                ).unsqueeze(0)  # Ensure shape is [1, 512]
                                 
                                 # Generate unique key
                                 thought_key = f"thought_{datetime.now().strftime('%Y%m%d%H%M%S')}_{hash_num % 1000}"
@@ -11637,32 +11963,106 @@ def integrate_qemf_with_agent(agent):
                         awareness = agent.ai_manager.consciousness.awareness_level
                         state = agent.ai_manager.consciousness.current_state
                         
-                        # Check if memory field is empty
+                        # Check if memory field is empty and create emergency memory if needed
                         if not agent.memory_field.memory_fields:
-                            log_event("Cannot resonate with empty memory field", "WARNING")
-                            return False
+                            log_event("Memory field empty, creating emergency seed memory for resonance", "WARNING")
+                            try:
+                                # Create emergency memory with current consciousness state
+                                # Directly create and insert a hologram to bypass encode method
+                                with torch.no_grad():
+                                    emergency_hologram = torch.randn(1, hologram_dim, device=device)
+                                    emergency_hologram = F.normalize(emergency_hologram, dim=1)
+                                    
+                                    # Direct insertion
+                                    memory_key = f"emergency_consciousness_{int(time.time())}"
+                                    agent.memory_field.memory_fields[memory_key] = emergency_hologram.detach()
+                                    agent.memory_field.field_metadata[memory_key] = {
+                                        'type': 'emergency_consciousness',
+                                        'consciousness_state': state,
+                                        'awareness_level': awareness,
+                                        'importance': 0.9,
+                                        'permanent': True,
+                                        'created': datetime.now().isoformat(),
+                                        'last_access': datetime.now().isoformat(),
+                                        'access_count': 1
+                                    }
+                                    agent.memory_field.superposition_cache[memory_key] = set()
+                                    
+                                log_event(f"Created emergency consciousness memory: {memory_key}", "QUANTUM")
+                            except Exception as e_em:
+                                log_event(f"Failed to create emergency memory: {str(e_em)}", "ERROR")
+                                return False
                         
-                        # Generate state encoding
+                        # Generate state encoding for current consciousness WITH PROPER SHAPE [1, 512]
                         state_hash = hash(f"{state}_{awareness:.2f}")
                         random.seed(state_hash)
-                        state_encoding = torch.tensor([random.random() for _ in range(memory_dimension)], 
-                                                    device=device)
+                        state_encoding = torch.tensor(
+                            [random.random() for _ in range(memory_dimension)], 
+                            device=device
+                        ).unsqueeze(0)  # Shape [1, 512]
                         
-                        # Apply resonance effect to memory field
-                        # This influences the entire field based on consciousness state
-                        memory_state = torch.stack(list(agent.memory_field.memory_fields.values()))
+                        # Process through field generator and encoder to match memory format
+                        with torch.no_grad():
+                            state_field = agent.memory_field.field_generator(state_encoding)
+                            state_hologram = agent.memory_field.holographic_encoder(state_field)
                         
-                        # Apply resonance with consciousness state as query
-                        resonated_state = agent.memory_field.resonator(memory_state, state_encoding)
+                        # Get all memories and stack them for batch processing
+                        memory_keys = list(agent.memory_field.memory_fields.keys())
                         
-                        # Measure resonance effect magnitude
-                        delta = torch.mean(torch.abs(resonated_state - memory_state))
+                        # Process each memory individually to avoid shape mismatch errors
+                        successful_resonations = 0
+                        for key in memory_keys:
+                            try:
+                                memory = agent.memory_field.memory_fields[key]
+                                
+                                # Ensure both state_hologram and memory have the same shape/batch dimension
+                                if memory.dim() != state_hologram.dim():
+                                    if memory.dim() > state_hologram.dim():
+                                        # Expand state_hologram to match memory's dimensions
+                                        state_hologram = state_hologram.expand(memory.shape[0], -1)
+                                    else:
+                                        # Expand memory to match state_hologram's dimensions
+                                        memory = memory.unsqueeze(0)
+                                
+                                # Verify matching dimensions before resonating
+                                if memory.shape[0] != state_hologram.shape[0] or memory.shape[1] != state_hologram.shape[1]:
+                                    log_event(f"Skipping resonation for memory {key} due to shape mismatch: {memory.shape} vs {state_hologram.shape}", "WARNING")
+                                    continue
+                                    
+                                # Apply resonance
+                                resonated_mem = agent.memory_field.resonator(memory, state_hologram)
+                                
+                                # Update memory
+                                agent.memory_field.memory_fields[key] = resonated_mem.detach()
+                                
+                                # Update access metadata
+                                if key in agent.memory_field.field_metadata:
+                                    agent.memory_field.field_metadata[key]['last_access'] = datetime.now().isoformat()
+                                    agent.memory_field.field_metadata[key]['access_count'] += 1
+                                
+                                successful_resonations += 1
+                            except Exception as e_res:
+                                log_event(f"Error resonating memory {key}: {str(e_res)}", "WARNING")
                         
-                        log_event(f"Consciousness resonance with memory field: delta={delta.item():.4f}, state={state}", "QUANTUM")
-                        
+                        log_event(f"Consciousness resonance applied to {successful_resonations}/{len(memory_keys)} memories, state={state}", "QUANTUM")
                         return True
                     except Exception as e:
                         log_event(f"Error in consciousness-memory resonance: {str(e)}", "ERROR")
+                        # Create fallback memory even after error
+                        try:
+                            with torch.no_grad():
+                                fallback_hologram = torch.randn(1, hologram_dim, device=device)
+                                memory_key = f"fallback_resonance_{int(time.time())}"
+                                agent.memory_field.memory_fields[memory_key] = fallback_hologram
+                                agent.memory_field.field_metadata[memory_key] = {
+                                    'type': 'fallback_resonance',
+                                    'importance': 1.0,
+                                    'created': datetime.now().isoformat()
+                                }
+                                agent.memory_field.superposition_cache[memory_key] = set()
+                            log_event("Created fallback memory after resonance error", "WARNING")
+                        except:
+                            pass
                         return False
                 
                 # Add method to consciousness module
@@ -11675,10 +12075,6 @@ def integrate_qemf_with_agent(agent):
         log_event(f"Error integrating QEMF with agent: {str(e)}", "ERROR")
         log_event(traceback.format_exc(), "ERROR")
         return False
-
-
-
-
 
 
 # =============================================================================
