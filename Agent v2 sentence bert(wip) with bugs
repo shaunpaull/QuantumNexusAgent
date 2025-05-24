@@ -822,7 +822,6 @@ class QuantumNexusModel(nn.Module):
         else:
             log_event(f"Cannot contract further: minimum layer count reached ({{min_layers}})", "WARNING")
 
-
     
     def compute_loss(self, predictions, targets, task_type="classification"):
         """
@@ -10649,12 +10648,12 @@ SAVE_INTERVAL = 5 # Save checkpoint more frequently for longer runs
 # =============================================================================
 adaptive_learning = None
 
-def enhanced_main_loop_with_training():
+def enhanced_main_loop():
     """
     Enhanced main execution loop with improved error handling, recovery mechanisms,
-    checkpointing reliability, and periodic model training.
+    and checkpointing reliability.
     """
-    global adaptive_learning, agent_instance # Referencing global variables
+    global adaptive_learning, agent_instance
 
     # Keep track of system state
     system_status = {
@@ -10670,9 +10669,10 @@ def enhanced_main_loop_with_training():
     try:
         # 1. Load or create model
         log_event("Initializing Quantum Nexus model...", "INFO")
-        model = load_or_create_model() # Uses default path "model_checkpoint.pth"
+        model = load_or_create_model()
 
         # 2. Create optimizer
+        import torch.optim as optim
         optimizer = optim.Adam(model.parameters(), lr=getattr(model, '_current_lr', 5e-5))
         scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=ANNEAL_GAMMA)
 
@@ -10681,40 +10681,54 @@ def enhanced_main_loop_with_training():
         agent_instance = agent  # Store for dashboard access
 
         # 4. Create core subsystems
+        # Initialize free will
         free_will = SuperQuantumFreeWill(agent=agent)
         agent.free_will = free_will
 
+        # Initialize AI Manager, which creates other subsystems
         ai_manager = AIManager(agent, model)
         agent.ai_manager = ai_manager
 
+        # Initialize adaptive learning - ensure we use model's current_lr if available
         current_lr = getattr(model, '_current_lr', 5e-5)
-        adaptive_learning = AdaptiveLearningSystem(model) # Assign to global
+        adaptive_learning = AdaptiveLearningSystem(model)
+        # Ensure learning rate history is initialized with current value
         if not adaptive_learning.learning_rate_history:
             adaptive_learning.learning_rate_history.append(current_lr)
         agent.adaptive_learning = adaptive_learning
 
+        # Initialize content sifter
         content_sifter = ContentSifter()
         agent.content_sifter = content_sifter
 
+        # Initialize planner sifter
         planner_sifter = PlannerSifter()
         agent.planner_sifter = planner_sifter
 
+        # Link consciousness to free will
         if hasattr(ai_manager, "consciousness") and hasattr(free_will, "link_consciousness"):
             free_will.link_consciousness(ai_manager.consciousness)
 
         # 5. System validation
         log_event("Performing system validation...", "INFO")
         validation_errors = []
-        if model is None: validation_errors.append("Model initialization failed")
-        if optimizer is None: validation_errors.append("Optimizer initialization failed")
-        if agent is None: validation_errors.append("Agent initialization failed")
-        if free_will is None: validation_errors.append("FreeWill initialization failed")
-        if ai_manager is None: validation_errors.append("AIManager initialization failed")
+
+        if model is None:
+            validation_errors.append("Model initialization failed")
+        if optimizer is None:
+            validation_errors.append("Optimizer initialization failed")
+        if agent is None:
+            validation_errors.append("Agent initialization failed")
+        if free_will is None:
+            validation_errors.append("FreeWill initialization failed")
+        if ai_manager is None:
+            validation_errors.append("AIManager initialization failed")
 
         if validation_errors:
             validation_error_msg = "; ".join(validation_errors)
             log_event(f"System validation errors: {validation_error_msg}", "ERROR")
             return False
+
         log_event("System validation complete. All components initialized.", "INFO")
 
         # 6. Setup async loop
@@ -10722,184 +10736,230 @@ def enhanced_main_loop_with_training():
         asyncio.set_event_loop(loop)
 
         # 7. Starting status
-        cycle_count = 0 # Start at 0, first cycle will be 1
-        log_event(f"🚀 Starting Quantum Nexus Enhanced Autonomous Loop with Training 🚀", "QUANTUM")
+        cycle_count = 1
+        log_event(f"🚀 Starting Quantum Nexus Enhanced Autonomous Loop 🚀", "QUANTUM")
+        
 
-        # Main loop
+
+        # Main loop with enhanced error handling
         while True:
-            cycle_count += 1
-            log_event(f"===== Enhanced Autonomous Cycle {cycle_count} =====", "INFO")
-
             try:
+                cycle_count += 1
+                log_event(f"===== Enhanced Autonomous Cycle {cycle_count} =====", "INFO")
+
+                # --- Periodically train the model (FROM YOUR FIRST SNIPPET) ---
+                if agent and hasattr(agent, 'action_log') and cycle_count % 50 == 0 and len(agent.action_log) > 100:
+                    log_event("Starting model training on collected data...", "INFO")
+                    try:
+                        # Ensure optimizer exists, especially if model had no params initially
+                        if optimizer is None and list(model.parameters()):
+                             current_lr = getattr(model, '_current_lr', DEFAULT_LR)
+                             optimizer = optim.Adam(model.parameters(), lr=current_lr)
+                             scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=ANNEAL_GAMMA) # Recreate scheduler too
+                             log_event("Optimizer and Scheduler re-initialized for training.", "INFO")
+
+                        if optimizer: # Proceed only if optimizer is valid
+                            avg_loss = train_on_collected_data(agent, model, optimizer)
+                            log_event(f"Training complete. Average loss: {avg_loss:.4f}", "INFO")
+                            
+                            # Save checkpoint after training if performance is good
+                            if avg_loss < 0.5: # Good performance threshold
+                                save_checkpoint(agent, model, cycle_count) # Pass agent for consistency if save_checkpoint needs it
+                                log_event("Model checkpoint saved after successful training", "INFO")
+                        else:
+                            log_event("Skipping training as optimizer is not available (model might have no parameters).", "WARNING")
+                            
+                    except Exception as e:
+                        log_event(f"Training error: {e}", "ERROR")
+                        log_event(traceback.format_exc(), "ERROR")
+                # --- End of Training Block ---
+
+
                 # Run the agent cycle with timeout protection
-                cycle_future = asyncio.ensure_future(ai_manager.run_cycle(optimizer))
-                # loop_result = loop.run_until_complete(asyncio.wait_for(cycle_future, timeout=120)) # Original
+                loop_result = None
                 try:
-                    loop_result = loop.run_until_complete(asyncio.wait_for(cycle_future, timeout=120))
+                    # Set a reasonable timeout for cycle execution
+                    # Ensure optimizer is available if run_cycle needs it (as per your original snippet)
+                    if optimizer is None and list(model.parameters()): # Defensive check
+                        log_event("Optimizer is None before run_cycle. Attempting re-initialization.", "WARNING")
+                        current_lr = getattr(model, '_current_lr', DEFAULT_LR)
+                        optimizer = optim.Adam(model.parameters(), lr=current_lr)
+                        # If scheduler was also None, you might re-initialize it here too.
+                        # scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=ANNEAL_GAMMA)
+
+                    if optimizer: # Only run if optimizer is valid
+                        cycle_future = asyncio.ensure_future(ai_manager.run_cycle(optimizer))
+                        loop_result = loop.run_until_complete(asyncio.wait_for(cycle_future, timeout=120))
+                    else:
+                        log_event("Skipping ai_manager.run_cycle as optimizer is not available.", "WARNING")
+                        loop_result = {"status": "error", "error": "Optimizer not available for cycle execution"}
+
                 except asyncio.TimeoutError:
-                    log_event(f"Cycle execution timed out after 120 seconds for cycle {cycle_count}", "ERROR")
+                    log_event(f"Cycle execution timed out after 120 seconds", "ERROR")
                     loop_result = {"status": "error", "error": "Execution timeout"}
-                    if not cycle_future.done():
+                    # Cancel the future if it's still running
+                    if 'cycle_future' in locals() and not cycle_future.done():
                         cycle_future.cancel()
-                        # Optionally wait for cancellation to complete
-                        # await cycle_future # This would require the outer loop to be async
-                        # or run it in the loop: loop.run_until_complete(cycle_future)
-                except Exception as cycle_exec_e: # Catch other errors from run_until_complete
-                    log_event(f"Error during cycle_future execution: {cycle_exec_e}", "ERROR")
+                except Exception as cycle_exec_err: # Catch other errors from run_cycle
+                    log_event(f"Error during ai_manager.run_cycle: {cycle_exec_err}", "ERROR")
                     log_event(traceback.format_exc(), "ERROR")
-                    loop_result = {"status": "error", "error": str(cycle_exec_e)}
+                    loop_result = {"status": "error", "error": str(cycle_exec_err)}
 
 
                 # Check for successful cycle and handle errors
                 if isinstance(loop_result, dict) and loop_result.get("status") == "error":
                     system_status["consecutive_errors"] += 1
                     error_message = loop_result.get("error", "Unknown error")
-                    log_event(f"Cycle {cycle_count} produced an error: {error_message}", "ERROR")
-                else:
+                    log_event(f"Cycle produced an error: {error_message}", "ERROR")
+                elif loop_result is not None: # Check if loop_result was actually set (e.g. not skipped due to no optimizer)
+                    # Success! Reset error counter and update last successful cycle
                     system_status["consecutive_errors"] = 0
                     system_status["last_successful_cycle"] = cycle_count
-                    system_status["emergency_mode"] = False # Reset emergency mode on success
+                    system_status["emergency_mode"] = False # Exit emergency mode on success
 
-                    if hasattr(agent, 'planner_sifter') and hasattr(agent.action_log, '__len__') and len(agent.action_log) > 0:
-                        # Ensure loop_result is a dict and contains expected keys
-                        if isinstance(loop_result, dict):
-                            strategy_name = loop_result.get("strategy", "exploration") # Default strategy
-                            result_data = {
-                                "content_length": agent.action_log[-1].get("content_length", 0) if agent.action_log else 0,
-                                "links_discovered": agent.action_log[-1].get("links_discovered", 0) if agent.action_log else 0,
-                                "success": loop_result.get("success", False)
-                            }
-                            agent.planner_sifter.update_strategy_effectiveness(strategy_name, result_data)
-                        else:
-                            log_event(f"Loop result was not a dictionary: {loop_result}", "WARNING")
+                    # Update strategy effectiveness if planner_sifter exists
+                    if agent and hasattr(agent, 'planner_sifter') and hasattr(agent.action_log, '__len__') and len(agent.action_log) > 0:
+                        strategy_name = loop_result.get("strategy", "exploration")
+                        # Ensure action_log has content and get the last item
+                        last_action = agent.action_log[-1] if agent.action_log else {}
+                        result_data = {
+                            "content_length": last_action.get("content_length", 0),
+                            "links_discovered": last_action.get("links_discovered", 0),
+                            "success": loop_result.get("success", False) # Use success from loop_result
+                        }
+                        agent.planner_sifter.update_strategy_effectiveness(strategy_name, result_data)
+                else:
+                    # This case handles if loop_result is None (e.g., cycle skipped)
+                    # It might be an error or an intentional skip. For now, let's count it as a minor issue.
+                    log_event("Cycle execution was skipped or did not produce a result.", "WARNING")
+                    # system_status["consecutive_errors"] += 1 # Optionally count as error
 
-                # --- Integrated Training Block ---
-                if cycle_count % TRAINING_CYCLE_INTERVAL == 0 and \
-                   hasattr(agent, 'action_log') and len(agent.action_log) >= TRAINING_MIN_DATA_SIZE:
-                    
-                    log_event(f"Starting model training on collected data (log size: {len(agent.action_log)})...", "INFO")
-                    try:
-                        # Assuming train_on_collected_data is synchronous.
-                        # If train_on_collected_data were async:
-                        #   training_future = asyncio.ensure_future(train_on_collected_data(agent, model, optimizer))
-                        #   avg_loss = loop.run_until_complete(asyncio.wait_for(training_future, timeout=TRAINING_TIMEOUT_SECONDS))
-                        # Else (synchronous):
-                        avg_loss = train_on_collected_data(agent, model, optimizer)
-                        
-                        if avg_loss is not None:
-                            log_event(f"Model training complete. Average loss: {avg_loss:.4f}", "INFO")
-                            # Save checkpoint after training if performance is good
-                            if avg_loss < TRAINING_SUCCESS_LOSS_THRESHOLD:
-                                save_reason = f"post_training_loss_{avg_loss:.4f}"
-                                training_save_success = save_checkpoint(agent, model, cycle_count, reason=save_reason)
-                                if training_save_success:
-                                    log_event(f"Model checkpoint saved after successful training (reason: {save_reason})", "INFO")
-                                else:
-                                    log_event(f"Checkpoint save FAILED after successful training (reason: {save_reason})", "WARNING")
-                            else:
-                                log_event(f"Training loss {avg_loss:.4f} not below threshold {TRAINING_SUCCESS_LOSS_THRESHOLD} for checkpoint.", "INFO")
-                        else:
-                            log_event("Training completed, but no average loss was returned (e.g., not enough data).", "WARNING")
-
-                    # except asyncio.TimeoutError: # Only if train_on_collected_data is async and uses wait_for
-                    #     log_event(f"Training timed out after {TRAINING_TIMEOUT_SECONDS} seconds", "ERROR")
-                    except Exception as e:
-                        log_event(f"Training error: {e}", "ERROR")
-                        log_event(traceback.format_exc(), "ERROR")
-                # --- End of Integrated Training Block ---
-
-
-                # Progressive error recovery
+                # Progressive error recovery based on consecutive error count
                 if system_status["consecutive_errors"] >= system_status["max_consecutive_errors"]:
                     system_status["critical_error_count"] += 1
                     system_status["recovery_attempts"] += 1
+
                     recovery_message = f"Critical error threshold reached ({system_status['consecutive_errors']} consecutive errors). "
 
+                    # Level 1 recovery: Reload model
                     if system_status["recovery_attempts"] == 1:
                         log_event(recovery_message + "Attempting Level 1 Recovery: Reloading model...", "WARNING")
                         try:
-                            model = load_or_create_model()
-                            optimizer = optim.Adam(model.parameters(), lr=getattr(model, '_current_lr', 5e-5))
-                            scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=ANNEAL_GAMMA)
-                            agent.model = model
-                            ai_manager.model = model
-                            log_event("Level 1 Recovery successful - model reloaded", "INFO")
-                            system_status["consecutive_errors"] = 0 # Reset errors after successful recovery
+                            model = load_or_create_model() # Consider passing a flag if you want to force 'new'
+                            current_lr = getattr(model, '_current_lr', DEFAULT_LR)
+
+                            if list(model.parameters()):
+                                optimizer = optim.Adam(model.parameters(), lr=current_lr)
+                                scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=ANNEAL_GAMMA)
+                                if agent: agent.model = model
+                                if ai_manager: ai_manager.model = model
+                                log_event("Level 1 Recovery successful - model reloaded, optimizer/scheduler reset", "INFO")
+                                system_status["consecutive_errors"] = 0 # Reset errors after successful recovery
+                            else:
+                                log_event("Level 1 Recovery: Model reloaded but has no parameters. Optimizer/Scheduler not set.", "WARNING")
+                                # Keep consecutive_errors high to trigger next recovery level if this isn't fixed
                         except Exception as e:
                             log_event(f"Level 1 Recovery failed: {str(e)}", "ERROR")
+                            log_event(traceback.format_exc(), "ERROR")
+
+                    # Level 2 recovery: Reset subsystems
                     elif system_status["recovery_attempts"] == 2:
                         log_event(recovery_message + "Attempting Level 2 Recovery: Resetting subsystems...", "WARNING")
                         try:
-                            if hasattr(ai_manager, "consciousness"):
-                                ai_manager.consciousness.awareness_level = 0.5
-                                ai_manager.consciousness.current_state = "balanced"
-                            if hasattr(ai_manager, "imagination"):
-                                ai_manager.imagination.creativity_level = 0.7
-                                ai_manager.imagination.current_mode = "associative"
-                            if hasattr(agent, "free_will"):
-                                agent.free_will.exploration_weight = 0.6
-                                agent.free_will.exploitation_weight = 0.4
+                            if ai_manager and hasattr(ai_manager, "consciousness"):
+                                ai_manager.consciousness = Consciousness() # Re-initialize
+                            if ai_manager and hasattr(ai_manager, "imagination"):
+                                ai_manager.imagination = Imagination() # Re-initialize
+                            if agent and hasattr(agent, "free_will"):
+                                agent.free_will = FreeWill() # Re-initialize
                             log_event("Level 2 Recovery successful - subsystems reset", "INFO")
                             system_status["consecutive_errors"] = 0
                         except Exception as e:
                             log_event(f"Level 2 Recovery failed: {str(e)}", "ERROR")
+                            log_event(traceback.format_exc(), "ERROR")
+
+                    # Level 3 recovery: Create new adaptive learning system
                     elif system_status["recovery_attempts"] == 3:
                         log_event(recovery_message + "Attempting Level 3 Recovery: Reinitializing adaptive learning...", "WARNING")
                         try:
-                            new_adaptive_learning = AdaptiveLearningSystem(model)
-                            agent.adaptive_learning = new_adaptive_learning
-                            adaptive_learning = new_adaptive_learning # Update global
-                            log_event("Level 3 Recovery successful - adaptive learning reinitialized", "INFO")
-                            system_status["consecutive_errors"] = 0
+                            if agent and model : # Ensure model exists
+                                agent.adaptive_learning = AdaptiveLearningSystem(model)
+                                log_event("Level 3 Recovery successful - adaptive learning reinitialized", "INFO")
+                                system_status["consecutive_errors"] = 0
+                            else:
+                                log_event("Level 3 Recovery failed: Agent or Model not available.", "ERROR")
                         except Exception as e:
                             log_event(f"Level 3 Recovery failed: {str(e)}", "ERROR")
+                            log_event(traceback.format_exc(), "ERROR")
+
+                    # Level 4 recovery: Emergency mode - simplified operation
                     elif system_status["recovery_attempts"] >= 4:
                         log_event(recovery_message + "Activating Emergency Mode: Reduced functionality...", "CRITICAL")
                         system_status["emergency_mode"] = True
-                        if system_status["recovery_attempts"] > 6: # Reset recovery attempts periodically in emergency
-                            system_status["recovery_attempts"] = 0
-                            log_event("Recovery attempt counter reset to retry recovery sequence", "INFO")
-                
-                # Periodic model saving (distinct from post-training save)
+                        # In emergency mode, we might simplify operations or increase sleep times
+                        # Reset recovery counter after maximum attempts to allow periodic retry of full recovery sequence
+                        if system_status["recovery_attempts"] > 6: # e.g., after 3 more attempts in emergency mode
+                            system_status["recovery_attempts"] = 0 # Reset to try Level 1 again next time
+                            system_status["consecutive_errors"] = 0 # Give it a fresh start for error counting
+                            log_event("Recovery attempt counter reset to retry recovery sequence from Level 1.", "INFO")
+
+                # Periodic model saving with enhanced reliability
                 if cycle_count % SAVE_INTERVAL == 0:
-                    save_success = save_checkpoint(agent, model, cycle_count, reason="periodic")
-                    if not save_success and not system_status["emergency_mode"]:
-                        log_event(f"Periodic checkpoint save failed for cycle {cycle_count} - will retry next interval", "WARNING")
-
-                # Update learning rate (if scheduler is used for global LR policy)
-                scheduler.step()
-                new_lr = scheduler.get_last_lr()[0]
-                if hasattr(model, '_current_lr') and model._current_lr != new_lr:
-                     model._current_lr = new_lr # Keep model's _current_lr in sync if it's used
-                     log_event(f"LR updated by scheduler to: {new_lr}", "DEBUG")
-                if agent.adaptive_learning and new_lr not in agent.adaptive_learning.learning_rate_history:
-                    agent.adaptive_learning.learning_rate_history.append(new_lr)
+                    if agent and model: # Ensure agent and model exist
+                        save_success = save_checkpoint(agent, model, cycle_count)
+                        if not save_success and not system_status["emergency_mode"]:
+                            log_event("Primary and backup checkpoint saves failed - will retry next interval", "WARNING")
+                    else:
+                        log_event(f"Skipping periodic save at cycle {cycle_count} as agent or model is not available.", "WARNING")
 
 
+                # Update learning rate
+                if scheduler: # Check if scheduler exists
+                    old_lr = optimizer.param_groups[0]['lr']
+                    scheduler.step()
+                    new_lr = optimizer.param_groups[0]['lr']
+                    if new_lr != old_lr and hasattr(model, 'set_lr'):
+                        model.set_lr(new_lr) # Update model's internal LR tracker
+                    log_event(f"Learning rate updated by scheduler. Old: {old_lr:.2e}, New: {new_lr:.2e}", "DEBUG")
+                
                 # Sleep briefly for stability
-                time.sleep(0.5)
+                sleep_duration = 0.5
+                if system_status["emergency_mode"]:
+                    sleep_duration = 5.0 # Longer sleep in emergency mode
+                    log_event(f"Emergency mode active. Sleeping for {sleep_duration}s", "WARNING")
+                time.sleep(sleep_duration)
 
             except KeyboardInterrupt:
                 log_event("Keyboard interrupt detected. Exiting gracefully...", "INFO")
-                save_checkpoint(agent, model, cycle_count, reason="shutdown_interrupt")
-                break
-            except Exception as e: # Catch-all for unexpected errors in the main loop's try block
-                log_event(f"Unhandled exception in main loop (cycle {cycle_count}): {str(e)}", "ERROR")
+                if agent and model:
+                    save_checkpoint(agent, model, cycle_count) # Final save attempt
+                break # Exit the while True loop
+
+            except Exception as e: # Catch-all for unexpected errors within the main loop's try block
+                log_event(f"Unhandled exception in main loop: {str(e)}", "ERROR")
                 log_event(traceback.format_exc(), "ERROR")
+
                 system_status["consecutive_errors"] += 1
-                if system_status["consecutive_errors"] >= system_status["max_consecutive_errors"] * 2: # More severe
-                    log_event("Critical unhandled exception threshold. Attempting final save.", "CRITICAL")
-                    save_checkpoint(agent, model, cycle_count, reason="shutdown_critical_error")
-                    break # Exit loop
-                time.sleep(5.0) # Longer sleep after unhandled error
+
+                # More aggressive handling for unhandled exceptions
+                if system_status["consecutive_errors"] >= system_status["max_consecutive_errors"] * 2: # e.g. 6 errors
+                    log_event("Critical unhandled exception threshold reached. Attempting final save before exit.", "CRITICAL")
+                    if agent and model:
+                        save_checkpoint(agent, model, cycle_count)
+                    break # Exit the while True loop
+
+                time.sleep(5.0) # Longer sleep after an unhandled error before retrying loop
 
     except Exception as init_error:
         log_event(f"Fatal initialization error: {str(init_error)}", "CRITICAL")
         log_event(traceback.format_exc(), "CRITICAL")
-        return False
+        return False # Indicate initialization failed
 
-    log_event("Quantum Nexus Enhanced Loop with Training finished.", "INFO")
-    return True
+    log_event("Application shutdown complete.", "INFO")
+    return True # Indicate successful run or graceful shutdown
+
+    
+
 
 def main():
     """Main entry point with Flask dashboard and agent execution"""
@@ -11233,3 +11293,4 @@ if __name__ == "__main__":
     except Exception as e:
         log_event(f"Critical startup error: {e}", "CRITICAL")
         traceback.print_exc()
+
