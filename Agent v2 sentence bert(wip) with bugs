@@ -2087,6 +2087,22 @@ class SuperQuantumFreeWill:
 
         log_event(f"Discovered {len(links)} links (using basic quality filter)", "INFO")
         return len(links)
+    
+
+    
+    # Add to SuperQuantumFreeWill class
+    def expand_memory(self, urls_to_add):
+        if not isinstance(urls_to_add, (list, set)):
+            log_event(f"expand_memory received non-iterable: {type(urls_to_add)}", "WARNING")
+            return
+        newly_added_count = 0
+        for url in urls_to_add:
+            if isinstance(url, str) and url.startswith(('http://', 'https://')): # Basic URL validation
+                if url not in self.memory_set:
+                    self.memory_set.add(url)
+                    newly_added_count += 1
+        if newly_added_count > 0:
+            log_event(f"Expanded memory with {newly_added_count} new URLs. Total memory: {len(self.memory_set)}", "INFO")
 
     def store_semantic_content(self, url, content):
         """Store content with semantic encoding for future reference"""
