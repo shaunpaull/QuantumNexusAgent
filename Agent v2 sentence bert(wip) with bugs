@@ -11474,3 +11474,4 @@ if __name__ == "__main__":
     except Exception as e:
         log_event(f"Critical startup error: {e}", "CRITICAL")
         traceback.print_exc()
+
