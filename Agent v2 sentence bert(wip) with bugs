@@ -731,10 +731,10 @@ class NeocortexBlock(nn.Module):
         return output
 
 class QuantumNexusModel(nn.Module):
-
     def __init__(self, vocab_size=30522, embed_dim=512, num_layers=8, num_quantum_states=4):
         super().__init__()
         self.embed_dim = embed_dim
+        self.vocab_size = vocab_size
 
         # Token embedding
         self.embedding = nn.Embedding(vocab_size, embed_dim)
@@ -749,8 +749,10 @@ class QuantumNexusModel(nn.Module):
             for _ in range(num_layers)
         ])
 
-        # Output projection
-        self.output = nn.Linear(embed_dim, 2)  # Binary prediction
+        # Output heads for different tasks
+        self.quality_prediction_head = nn.Linear(embed_dim, 1)  # Predict content quality
+        self.link_value_head = nn.Linear(embed_dim, 2)  # Binary: valuable link or not
+        self.content_relevance_head = nn.Linear(embed_dim, 2)  # Binary: relevant or not
 
         # For training dynamics
         self.dropout = nn.Dropout(0.1)
@@ -759,10 +761,8 @@ class QuantumNexusModel(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-
         for name, p in self.named_parameters():
             if 'weight' in name and len(p.shape) >= 2:
-                # Kaiming for linear/conv, smaller for quantum
                 if 'quantum' in name:
                     nn.init.normal_(p, mean=0.0, std=0.01)
                 else:
@@ -770,83 +770,85 @@ class QuantumNexusModel(nn.Module):
             elif 'bias' in name:
                 nn.init.zeros_(p)
 
-    def forward(self, x, consciousness_level=0.8):
-
-        # Convert to long for embedding
-        x = x.long()
-
-        # Get sequence length
-        seq_len = x.size(1)
-
-        # Embedding lookup
-        x = self.embedding(x)
-
-        # Add positional encoding (limited to sequence length)
-        x = x + self.pos_encoder[:, :seq_len, :]
-
+    def forward(self, x, task="quality_prediction", consciousness_level=0.8):
+        """
+        Forward pass with task-specific output heads.
+        
+        Args:
+            x: Input tensor
+            task: Which prediction task to perform
+            consciousness_level: Quantum consciousness parameter
+        """
+        # Handle different input types
+        if x.dtype != torch.long:
+            # If input is embeddings (float), project to embedding space
+            if len(x.shape) == 2:
+                x = x.unsqueeze(1)  # Add sequence dimension
+            
+            # Project float embeddings to model dimension
+            if x.size(-1) != self.embed_dim:
+                projection = nn.Linear(x.size(-1), self.embed_dim).to(x.device)
+                x = projection(x)
+            
+            # Skip embedding lookup for pre-embedded inputs
+            embedded = x
+        else:
+            # Standard token embedding for integer inputs
+            x = x.long()
+            embedded = self.embedding(x)
+            seq_len = x.size(1)
+            embedded = embedded + self.pos_encoder[:, :seq_len, :]
+        
         # Apply dropout
-        x = self.dropout(x)
+        x = self.dropout(embedded)
 
         # Process through neocortex layers
         for i, layer in enumerate(self.neocortex):
-            # Apply consciousness-weighted processing
-            # Later layers get more quantum consciousness effects
             layer_consciousness = consciousness_level * (i + 1) / len(self.neocortex)
+            x = layer(x)
 
-            # Adjust quantum processing based on consciousness
-            if isinstance(layer, NeocortexBlock):
-                # Store intermediate activations for interpretability
-                x = layer(x)
+        # Pool sequence dimension for classification/regression
+        if len(x.shape) == 3:  # (batch, seq, dim)
+            x = x.mean(dim=1)  # Global average pooling
 
-        # Final output projection
-        output = self.output(x)
+        # Apply task-specific head
+        if task == "quality_prediction":
+            output = self.quality_prediction_head(x)
+            output = torch.sigmoid(output)  # Scale to [0, 1]
+        elif task == "link_value":
+            output = self.link_value_head(x)
+        elif task == "content_relevance":
+            output = self.content_relevance_head(x)
+        else:
+            # Default binary classification
+            output = self.link_value_head(x)
 
         return output
 
-    def get_embedding(self, text_tokens):
-
-        with torch.no_grad():
-            return self.embedding(text_tokens)
-
-    def expand_architecture(self):
-
-        # Add new neocortex block
-        self.neocortex.append(NeocortexBlock(self.embed_dim))
-        log_event(f"Model architecture expanded with new NeocortexBlock. Total layers: {{len(self.neocortex)}}", "QUANTUM")
-
-    def contract_architecture(self, min_layers=3):
-
-        if len(self.neocortex) > min_layers:
-            self.neocortex = self.neocortex[:-1]
-            log_event(f"Model architecture contracted. Total layers: {{len(self.neocortex)}}", "QUANTUM")
-        else:
-            log_event(f"Cannot contract further: minimum layer count reached ({{min_layers}})", "WARNING")
-
-    
-    def compute_loss(self, predictions, targets, task_type="classification"):
+    def compute_loss(self, predictions, targets, task="quality_prediction"):
         """
         Compute loss for training based on task type.
         
         Args:
             predictions: Model output
             targets: Ground truth labels/values
-            task_type: "classification" or "regression"
+            task: Task type for appropriate loss function
         """
-        if task_type == "classification":
-            # For binary classification (e.g., is link valuable or not)
-            return F.cross_entropy(predictions, targets)
-        else:
-            # For regression tasks (e.g., predicting content quality score)
+        if task == "quality_prediction":
+            # Regression loss for quality scores
             return F.mse_loss(predictions.squeeze(), targets.float())
-    
-    def train_step(self, batch_data, optimizer, task_type="classification"):
+        else:
+            # Classification loss for binary tasks
+            return F.cross_entropy(predictions, targets)
+
+    def train_step(self, batch_data, optimizer, task="quality_prediction"):
         """
         Perform a single training step.
         
         Args:
             batch_data: Dict with 'inputs' and 'targets'
             optimizer: PyTorch optimizer
-            task_type: Type of task for loss computation
+            task: Type of prediction task
         """
         self.train()
         optimizer.zero_grad()
@@ -854,10 +856,15 @@ class QuantumNexusModel(nn.Module):
         # Forward pass
         inputs = batch_data['inputs']
         targets = batch_data['targets']
-        predictions = self(inputs)
+        predictions = self(inputs, task=task)
         
         # Compute loss
-        loss = self.compute_loss(predictions, targets, task_type)
+        loss = self.compute_loss(predictions, targets, task=task)
+        
+        # Add L2 regularization
+        l2_lambda = 0.001
+        l2_norm = sum(p.pow(2.0).sum() for p in self.parameters())
+        loss = loss + l2_lambda * l2_norm
         
         # Backward pass
         loss.backward()
@@ -870,26 +877,153 @@ class QuantumNexusModel(nn.Module):
         
         return loss.item()
 
-# Add training functionality to the agent
-def train_on_collected_data(agent, model, optimizer):
+    def get_embedding(self, text_tokens):
+        """Get embeddings for text tokens"""
+        with torch.no_grad():
+            return self.embedding(text_tokens)
+
+    def expand_architecture(self):
+        """Add new neocortex block"""
+        self.neocortex.append(NeocortexBlock(self.embed_dim))
+        log_event(f"Model architecture expanded with new NeocortexBlock. Total layers: {len(self.neocortex)}", "QUANTUM")
+
+    def contract_architecture(self, min_layers=3):
+        """Remove a neocortex block"""
+        if len(self.neocortex) > min_layers:
+            self.neocortex = self.neocortex[:-1]
+            log_event(f"Model architecture contracted. Total layers: {len(self.neocortex)}", "QUANTUM")
+        else:
+            log_event(f"Cannot contract further: minimum layer count reached ({min_layers})", "WARNING")
+
+
+
+
+def prepare_training_data(agent, task="quality_prediction"):
+    """
+    Prepare training data from agent's collected experience.
+    
+    Args:
+        agent: The agent instance with collected data
+        task: Type of prediction task to prepare data for
+    """
+    inputs = []
+    targets = []
+    
+    if task == "quality_prediction":
+        # Train to predict content quality from embeddings
+        if hasattr(agent, 'free_will') and hasattr(agent.free_will, 'semantic_memory'):
+            semantic_memory = agent.free_will.semantic_memory
+            
+            if isinstance(semantic_memory, SemanticMemoryModule):
+                # Access the actual memory storage
+                memory_dict = semantic_memory.semantic_memory
+            else:
+                # Direct dictionary access
+                memory_dict = semantic_memory
+            
+            for url, memory_data in memory_dict.items():
+                if 'embedding' in memory_data and 'importance' in memory_data:
+                    embedding = memory_data['embedding']
+                    quality_score = memory_data.get('importance', 0.5)
+                    
+                    # Ensure embedding is numpy array
+                    if isinstance(embedding, torch.Tensor):
+                        embedding = embedding.numpy()
+                    
+                    inputs.append(embedding)
+                    targets.append(quality_score)
+    
+    elif task == "link_value":
+        # Train to predict if a link is valuable based on action outcomes
+        if hasattr(agent, 'action_log'):
+            for action in agent.action_log:
+                if action.get('success') and 'content_quality' in action:
+                    # Create feature vector from action metrics
+                    features = [
+                        action.get('content_length', 0) / 10000,  # Normalized
+                        action.get('links_discovered', 0) / 100,   # Normalized
+                        action.get('content_quality', 0),
+                        len(action.get('extracted_info', {}).get('entities', [])) / 10  # Normalized
+                    ]
+                    
+                    # Use semantic embedding if available
+                    if hasattr(agent, 'free_will') and hasattr(agent.free_will, 'semantic_memory'):
+                        url = action.get('url')
+                        if url:
+                            semantic_memory = agent.free_will.semantic_memory
+                            if isinstance(semantic_memory, SemanticMemoryModule):
+                                memory_dict = semantic_memory.semantic_memory
+                            else:
+                                memory_dict = semantic_memory
+                            
+                            if url in memory_dict and 'embedding' in memory_dict[url]:
+                                embedding = memory_dict[url]['embedding']
+                                if isinstance(embedding, torch.Tensor):
+                                    embedding = embedding.numpy()
+                                inputs.append(embedding)
+                                # Binary target: valuable if quality > 0.7
+                                targets.append(1 if action['content_quality'] > 0.7 else 0)
+                                continue
+                    
+                    # Fallback: pad features to embedding dimension
+                    embed_dim = agent.model.embed_dim if hasattr(agent, 'model') else 512
+                    while len(features) < embed_dim:
+                        features.append(0.0)
+                    
+                    inputs.append(np.array(features[:embed_dim]))
+                    targets.append(1 if action['content_quality'] > 0.7 else 0)
+    
+    if not inputs:
+        return None
+    
+    # Convert to tensors
+    inputs_tensor = torch.tensor(np.array(inputs), dtype=torch.float32)
+    
+    if task == "quality_prediction":
+        targets_tensor = torch.tensor(targets, dtype=torch.float32)
+    else:
+        targets_tensor = torch.tensor(targets, dtype=torch.long)
+    
+    return {
+        'inputs': inputs_tensor,
+        'targets': targets_tensor,
+        'task': task
+    }
+
+def train_on_collected_data(agent, model, optimizer, min_samples=50):
     """
     Train the model on data collected during agent exploration.
-    """
-    # Prepare training data from agent's experience
-    training_data = prepare_training_data(agent)
     
-    if not training_data:
-        log_event("No training data available", "WARNING")
-        return
+    Args:
+        agent: Agent instance with collected data
+        model: QuantumNexusModel to train
+        optimizer: PyTorch optimizer
+        min_samples: Minimum samples needed before training
+    """
+    # Try different tasks and use the one with most data
+    tasks = ["quality_prediction", "link_value"]
+    best_task = None
+    best_data = None
+    max_samples = 0
+    
+    for task in tasks:
+        training_data = prepare_training_data(agent, task)
+        if training_data and len(training_data['inputs']) > max_samples:
+            max_samples = len(training_data['inputs'])
+            best_task = task
+            best_data = training_data
+    
+    if not best_data or max_samples < min_samples:
+        log_event(f"Insufficient training data: {max_samples} samples (need {min_samples})", "WARNING")
+        return None
+    
+    log_event(f"Training on {max_samples} samples for task: {best_task}", "INFO")
     
     # Create DataLoader
     from torch.utils.data import DataLoader, TensorDataset
     
-    dataset = TensorDataset(
-        training_data['inputs'],
-        training_data['targets']
-    )
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+    dataset = TensorDataset(best_data['inputs'], best_data['targets'])
+    dataloader = DataLoader(dataset, batch_size=min(BATCH_SIZE, max_samples), shuffle=True)
     
     # Training loop
     model.train()
@@ -905,103 +1039,49 @@ def train_on_collected_data(agent, model, optimizer):
             'targets': batch_targets
         }
         
-        loss = model.train_step(batch_data, optimizer, task_type="classification")
+        loss = model.train_step(batch_data, optimizer, task=best_task)
         total_loss += loss
         num_batches += 1
     
     avg_loss = total_loss / max(1, num_batches)
-    log_event(f"Training completed. Average loss: {avg_loss:.4f}", "INFO")
+    log_event(f"Training completed. Task: {best_task}, Average loss: {avg_loss:.4f}", "INFO")
     
     # Track performance for meta-learning
     if hasattr(agent, 'ai_manager') and hasattr(agent.ai_manager, 'meta_learning'):
         agent.ai_manager.meta_learning.track_performance({'loss': avg_loss})
     
-    return avg_loss
-
-def prepare_training_data(agent):
-    """
-    Prepare training data from agent's collected experience.
-    """
-    inputs = []
-    targets = []
-    
-    # Example: Train to predict content quality from embeddings
-    if hasattr(agent, 'free_will') and hasattr(agent.free_will, 'semantic_memory'):
-        for url, memory_data in agent.free_will.semantic_memory.items():
-            if 'embedding' in memory_data and 'importance' in memory_data:
-                # Use embedding as input
-                embedding = memory_data['embedding']
-                # Use importance/quality as target (binary: good/bad)
-                quality_score = memory_data.get('importance', 0.5)
-                target = 1 if quality_score > 0.6 else 0
-                
-                inputs.append(embedding)
-                targets.append(target)
-    
-    # Example: Train to predict link value from action history
-    if hasattr(agent, 'action_log'):
-        for action in agent.action_log:
-            if action.get('success') and 'content_quality' in action:
-                # Create simple features
-                features = [
-                    action.get('content_length', 0) / 10000,  # Normalized
-                    action.get('links_discovered', 0) / 100,   # Normalized
-                    action.get('content_quality', 0)
-                ]
-                
-                # Pad to match model input dimension
-                while len(features) < 512:  # Assuming embed_dim=512
-                    features.append(0.0)
-                
-                # Target: was this a valuable action?
-                valuable = 1 if action['content_quality'] > 0.7 else 0
-                
-                inputs.append(features[:512])
-                targets.append(valuable)
-    
-    if not inputs:
-        return None
-    
-    # Convert to tensors
-    inputs_tensor = torch.tensor(inputs, dtype=torch.float32)
-    targets_tensor = torch.tensor(targets, dtype=torch.long)
-    
-    # Add batch and sequence dimensions if needed
-    if len(inputs_tensor.shape) == 2:
-        inputs_tensor = inputs_tensor.unsqueeze(1)  # Add sequence dimension
-    
     return {
-        'inputs': inputs_tensor,
-        'targets': targets_tensor
-    }            
+        'task': best_task,
+        'avg_loss': avg_loss,
+        'samples': max_samples
+    }                      
 # =============================================================================
 # AGENT CORE - ADDED HERE
 # =============================================================================
 class QuantumNexusAgent:
     """
-    Main autonomous agent class, integrating all core modules and functionalities.
+    Main autonomous agent class with real content processing capabilities.
     """
     def __init__(self, model):
         self.model = model
-        self.stats = defaultdict(int) # Initialize statistics
-        self.action_log = deque(maxlen=100) # Keep track of recent actions
-
+        self.stats = defaultdict(int)
+        self.action_log = deque(maxlen=100)
+        self.domain_stats = {}  # Track domain-specific statistics
+        
     def perceive(self):
         """
         Perceive the environment and gather relevant information.
-        (Placeholder - you'll need to implement actual perception logic)
         """
         observation = {
             "time": datetime.now().isoformat(),
-            "memory_size": len(getattr(self.free_will, 'memory_set', [])), # Safely get memory size
+            "memory_size": len(getattr(self.free_will, 'memory_set', [])),
             "cycle_count": self.stats['cycles_run'],
             "last_action": self.action_log[-1] if self.action_log else "No actions yet.",
             "recent_actions": list(self.action_log)[-5:],
-            "thinking_mode": getattr(getattr(self.ai_manager, 'autonomous_mind', None), 'current_mode', 'balanced'), # Safely get thinking mode
-            "domain_stats": self.stats.get("domain_stats", {})
+            "thinking_mode": getattr(getattr(self.ai_manager, 'autonomous_mind', None), 'current_mode', 'balanced'),
+            "domain_stats": self.domain_stats
         }
         return observation
-
 
     def act(self, plan, optimizer=None):
         """
@@ -1015,13 +1095,14 @@ class QuantumNexusAgent:
         links_discovered = 0
         content_quality = 0.0
         processing_success = False
+        extracted_info = {}
         
         # Get URL to process
         url = None
         if hasattr(self, 'free_will') and hasattr(self.free_will, 'select_url'):
             url = self.free_will.select_url()
         
-        if url and action_type in ["expand", "search", "evaluate"]:
+        if url and action_type in ["expand", "search", "evaluate", "adapt", "reconnect"]:
             try:
                 # Fetch actual web content
                 headers = {"User-Agent": USER_AGENT}
@@ -1045,10 +1126,22 @@ class QuantumNexusAgent:
                         
                         # Extract key information if quality is good
                         if content_quality > 0.6:
-                            key_info = self.content_sifter.extract_key_information(text_content)
+                            extracted_info = self.content_sifter.extract_key_information(text_content)
+                            
                             # Store in semantic memory
-                            if hasattr(self, 'free_will'):
+                            if hasattr(self, 'free_will') and hasattr(self.free_will, 'semantic_memory'):
                                 self.free_will.store_semantic_content(url, text_content)
+                            
+                            # Update domain intelligence
+                            if hasattr(self, 'free_will') and hasattr(self.free_will, 'domain_intelligence'):
+                                domain = urlparse(url).netloc
+                                self.free_will.domain_intelligence.update_content_knowledge(
+                                    domain, url, {
+                                        'quality': content_quality,
+                                        'topics': extracted_info.get('entities', []),
+                                        'length': content_length
+                                    }
+                                )
                     
                     # Discover links
                     if hasattr(self, 'free_will'):
@@ -1061,18 +1154,18 @@ class QuantumNexusAgent:
                     processing_success = True
                     log_event(f"Successfully processed {url}: {content_length} bytes, {links_discovered} links, quality: {content_quality:.2f}", "INFO")
                     
-            except requests.RequestException as e:
-                log_event(f"Error fetching {url}: {e}", "ERROR")
-                # Update domain stats for error
-                if hasattr(self, 'stats') and url:
-                    domain = urlparse(url).netloc
-                    if 'domain_stats' not in self.stats:
-                        self.stats['domain_stats'] = {}
-                    if domain not in self.stats['domain_stats']:
-                        self.stats['domain_stats'][domain] = {"visits": 0, "error_count": 0}
-                    self.stats['domain_stats'][domain]['error_count'] += 1
+                else:
+                    log_event(f"HTTP {response.status_code} for {url}", "WARNING")
+                    
+            except requests.exceptions.Timeout:
+                log_event(f"Timeout fetching {url}", "ERROR")
+                self._update_domain_error_stats(url)
+            except requests.exceptions.ConnectionError:
+                log_event(f"Connection error fetching {url}", "ERROR")
+                self._update_domain_error_stats(url)
             except Exception as e:
                 log_event(f"Unexpected error processing {url}: {e}", "ERROR")
+                self._update_domain_error_stats(url)
         
         # Create action details with real metrics
         action_details = {
@@ -1084,59 +1177,126 @@ class QuantumNexusAgent:
             "content_length": content_length,
             "links_discovered": links_discovered,
             "content_quality": content_quality,
+            "extracted_info": extracted_info,
             "metrics": {
                 "bytes_processed": content_length,
                 "links_found": links_discovered,
                 "quality_score": content_quality,
-                "processing_success": processing_success
+                "processing_success": processing_success,
+                "entities_extracted": len(extracted_info.get('entities', [])) if extracted_info else 0
             }
         }
         
         self.action_log.append(action_details)
         self.stats['cycles_run'] += 1
         
-        # Update domain stats
-        if url and processing_success:
-            domain = urlparse(url).netloc
-            if 'domain_stats' not in self.stats:
-                self.stats['domain_stats'] = {}
-            if domain not in self.stats['domain_stats']:
-                self.stats['domain_stats'][domain] = {
-                    "visits": 0,
-                    "pages_processed": 0,
-                    "total_content_length": 0,
-                    "avg_quality": 0.0
-                }
-            
-            domain_stats = self.stats['domain_stats'][domain]
-            domain_stats['visits'] += 1
-            domain_stats['pages_processed'] += 1
-            domain_stats['total_content_length'] += content_length
-            # Update average quality with running average
-            prev_avg = domain_stats['avg_quality']
-            n = domain_stats['pages_processed']
-            domain_stats['avg_quality'] = ((prev_avg * (n-1)) + content_quality) / n
+        # Update domain statistics
+        if url:
+            self._update_domain_stats(url, action_details)
         
         return action_details
 
+    def _update_domain_stats(self, url, action_details):
+        """Update domain-specific statistics"""
+        domain = urlparse(url).netloc
+        
+        if domain not in self.domain_stats:
+            self.domain_stats[domain] = {
+                "visits": 0,
+                "pages_processed": 0,
+                "total_content_length": 0,
+                "total_links_discovered": 0,
+                "avg_quality": 0.0,
+                "error_count": 0,
+                "error_rate": 0.0,
+                "last_visit": None,
+                "successful_visits": 0
+            }
+        
+        stats = self.domain_stats[domain]
+        stats['visits'] += 1
+        stats['last_visit'] = datetime.now().isoformat()
+        
+        if action_details['success']:
+            stats['successful_visits'] += 1
+            stats['pages_processed'] += 1
+            stats['total_content_length'] += action_details['content_length']
+            stats['total_links_discovered'] += action_details['links_discovered']
+            
+            # Update average quality with running average
+            prev_avg = stats['avg_quality']
+            n = stats['pages_processed']
+            new_quality = action_details['content_quality']
+            stats['avg_quality'] = ((prev_avg * (n-1)) + new_quality) / n
+        
+        # Update error rate
+        stats['error_rate'] = stats['error_count'] / stats['visits']
+
+    def _update_domain_error_stats(self, url):
+        """Update error statistics for a domain"""
+        if url:
+            domain = urlparse(url).netloc
+            if domain not in self.domain_stats:
+                self.domain_stats[domain] = {
+                    "visits": 0,
+                    "pages_processed": 0,
+                    "total_content_length": 0,
+                    "total_links_discovered": 0,
+                    "avg_quality": 0.0,
+                    "error_count": 0,
+                    "error_rate": 0.0,
+                    "last_visit": None,
+                    "successful_visits": 0
+                }
+            
+            self.domain_stats[domain]['error_count'] += 1
+            self.domain_stats[domain]['visits'] += 1
+            self.domain_stats[domain]['error_rate'] = (
+                self.domain_stats[domain]['error_count'] / 
+                self.domain_stats[domain]['visits']
+            )
 
     def refine(self):
         """
         Refine and adapt internal parameters and strategies.
-        (Placeholder - you'll need to implement actual refinement logic)
         """
         log_event("Agent refinement process initiated.", "INFO")
-        # Placeholder refinement actions - replace with actual logic
-        if random.random() < 0.3:
-            if hasattr(self.ai_manager, "meta_learning"):
-                metrics = {"loss": random.uniform(0.1, 0.6)} # Dummy loss
+        
+        # Analyze domain performance and adjust strategies
+        if self.domain_stats:
+            # Find high-performing domains
+            high_quality_domains = [
+                domain for domain, stats in self.domain_stats.items()
+                if stats['avg_quality'] > 0.7 and stats['error_rate'] < 0.2
+            ]
+            
+            # Find problematic domains
+            problematic_domains = [
+                domain for domain, stats in self.domain_stats.items()
+                if stats['error_rate'] > 0.5 or stats['avg_quality'] < 0.3
+            ]
+            
+            if high_quality_domains:
+                log_event(f"High-quality domains identified: {', '.join(high_quality_domains[:3])}", "INFO")
+            
+            if problematic_domains:
+                log_event(f"Problematic domains identified: {', '.join(problematic_domains[:3])}", "WARNING")
+        
+        # Trigger adaptive learning adjustments
+        if hasattr(self, 'ai_manager') and hasattr(self.ai_manager, 'meta_learning'):
+            recent_actions = list(self.action_log)[-10:]
+            if recent_actions:
+                avg_quality = sum(a.get('content_quality', 0) for a in recent_actions) / len(recent_actions)
+                metrics = {
+                    "loss": 1.0 - avg_quality,  # Convert quality to loss
+                    "avg_content_length": sum(a.get('content_length', 0) for a in recent_actions) / len(recent_actions),
+                    "success_rate": sum(1 for a in recent_actions if a.get('success', False)) / len(recent_actions)
+                }
+                
                 self.ai_manager.meta_learning.track_performance(metrics)
-                adapted_lr = self.adaptive_learning.adapt_learning_rate(metrics) # <---- Call on self.adaptive_learning
+                adapted_lr = self.adaptive_learning.adapt_learning_rate(metrics)
                 log_event(f"Adaptive learning rate adjustment: {adapted_lr:.6f}", "INFO")
-            else:
-                log_event("Adaptive learning system not available for refinement.", "WARNING")
-        else:
-            log_event("No specific refinement needed this cycle.", "INFO")
+        
         return True
 
 
@@ -3164,9 +3324,9 @@ class AdaptiveLearningSystem:
 class SemanticMemoryModule:
     """
     Advanced semantic memory system for encoding, storing, retrieving, and
-    reasoning with knowledge representations.
+    reasoning with knowledge representations using real sentence embeddings.
     """
-    def __init__(self, dimension=SEMANTIC_MEMORY_DIM, max_memory_size=10000):
+    def __init__(self, dimension=384, max_memory_size=10000):  # 384 is MiniLM dimension
         self.semantic_memory = {}
         self.dimension = dimension
         self.max_memory_size = max_memory_size
@@ -3176,38 +3336,32 @@ class SemanticMemoryModule:
         self.memory_importance = {}  # Track memory importance scores
         self.memory_timestamps = {}  # Track when memories were stored
 
-        # Integration with hyperdimensional computing
-        self.hd_basis_vectors = None
-
         # Initialize sentence embedding model
-        self.embedding_model = None # Initialize as None
-        self._initialize_embedding_model() # Call initialization method
+        self.embedding_model = None
+        self._initialize_embedding_model()
 
-        # Update dimension based on the loaded model if successful
-        if self.embedding_model is not None:
-            # For 'all-MiniLM-L6-v2', the dimension is 384
-            # This line ensures consistency if SEMANTIC_MEMORY_DIM was different
-            self.dimension = self.embedding_model.get_sentence_embedding_dimension() 
-            log_event(f"SemanticMemoryModule dimension set to {self.dimension} (from SentenceTransformer)", "INFO")
-        else:
-            log_event(f"SemanticMemoryModule initialized with fallback dimension {self.dimension}", "INFO")
+        log_event(f"SemanticMemoryModule initialized with dimension {dimension}", "INFO")
 
     def _initialize_embedding_model(self):
         """Initialize the sentence embedding model"""
         try:
+            from sentence_transformers import SentenceTransformer
             # Use a lightweight but effective model
-            # This downloads the model the first time it runs
             self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-            # The dimension will be updated in __init__ after this call.
-            log_event("Initialized Sentence-BERT embedding model 'all-MiniLM-L6-v2'", "INFO")
+            # Verify dimension matches
+            test_embedding = self.embedding_model.encode("test", convert_to_numpy=True)
+            self.dimension = len(test_embedding)
+            log_event(f"Initialized Sentence-BERT embedding model (dimension: {self.dimension})", "INFO")
         except Exception as e:
-            log_event(f"Failed to initialize Sentence-BERT embedding model: {e}. Falling back to hash-based embedding.", "ERROR")
-            self.embedding_model = None # Ensure it's None if loading fails
+            log_event(f"Failed to initialize embedding model: {e}", "ERROR")
+            log_event("Falling back to placeholder embeddings", "WARNING")
+            # Fall back to placeholder if model can't be loaded
+            self.embedding_model = None
+            self.dimension = SEMANTIC_MEMORY_DIM  # Use default dimension
 
     def _generate_embedding(self, content):
         """
         Generate semantic embedding for content using Sentence-BERT.
-        If Sentence-BERT is not available, falls back to hash-based embedding.
         """
         if not content:
             return np.zeros(self.dimension)
@@ -3215,33 +3369,29 @@ class SemanticMemoryModule:
         # Use real embeddings if model is available
         if self.embedding_model is not None:
             try:
-                # Truncate very long content for efficiency as Sentence-BERT has a token limit
-                # A rough estimate for 512 tokens is about 4x the characters (e.g., 2048 characters)
-                max_chars = 512 * 4 
-                truncated_content = content[:max_chars]
+                # Truncate very long content for efficiency
+                max_length = 512  # BERT max tokens
+                truncated_content = content[:max_length*4]  # Rough char estimate
                 
                 # Generate embedding
                 embedding = self.embedding_model.encode(
                     truncated_content,
                     convert_to_numpy=True,
-                    normalize_embeddings=True # Ensures unit vectors for cosine similarity
+                    normalize_embeddings=True
                 )
                 
                 return embedding
             except Exception as e:
-                log_event(f"Sentence-BERT embedding generation failed for content. Falling back to hash-based: {e}", "ERROR")
-                # Fall through to the hash-based fallback below
+                log_event(f"Embedding generation failed: {e}", "ERROR")
+                # Fall through to placeholder
         
-        # Fallback to original hash-based pseudo-random embedding implementation
-        # This will only run if self.embedding_model is None or an error occurred during encode()
-        content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest() # Using SHA256 for better hash distribution
+        # Fallback to original placeholder implementation
+        content_hash = hashlib.md5(content.encode('utf-8')).hexdigest()
         rng = random.Random(content_hash)
         embedding = np.array([rng.uniform(-1, 1) for _ in range(self.dimension)])
         norm = np.linalg.norm(embedding)
         if norm > 0:
             embedding = embedding / norm
-        
-        log_event(f"Using fallback hash-based embedding for content (length: {len(content)})", "DEBUG")
         return embedding
 
     def _extract_keywords(self, content, max_keywords=10):
@@ -10651,7 +10801,7 @@ adaptive_learning = None
 def enhanced_main_loop():
     """
     Enhanced main execution loop with improved error handling, recovery mechanisms,
-    and checkpointing reliability.
+    training integration, and semantic memory improvements.
     """
     global adaptive_learning, agent_instance
 
@@ -10662,13 +10812,16 @@ def enhanced_main_loop():
         "critical_error_count": 0,
         "last_successful_cycle": 0,
         "emergency_mode": False,
-        "recovery_attempts": 0
+        "recovery_attempts": 0,
+        "last_training_cycle": 0,
+        "training_interval": 50,
+        "total_training_sessions": 0
     }
 
     # Initialize components with comprehensive error handling
     try:
         # 1. Load or create model
-        log_event("Initializing Quantum Nexus model...", "INFO")
+        log_event("Initializing Quantum Nexus model with training capabilities...", "INFO")
         model = load_or_create_model()
 
         # 2. Create optimizer
@@ -10736,103 +10889,90 @@ def enhanced_main_loop():
         asyncio.set_event_loop(loop)
 
         # 7. Starting status
-        cycle_count = 1
-        log_event(f"🚀 Starting Quantum Nexus Enhanced Autonomous Loop 🚀", "QUANTUM")
-        
+        cycle_count = 0
+        log_event(f"🚀 Starting Quantum Nexus Enhanced Autonomous Loop with Training 🚀", "QUANTUM")
 
-
-        # Main loop with enhanced error handling
+        # Main loop with enhanced error handling and training
         while True:
             try:
                 cycle_count += 1
                 log_event(f"===== Enhanced Autonomous Cycle {cycle_count} =====", "INFO")
 
-                # --- Periodically train the model (FROM YOUR FIRST SNIPPET) ---
-                if agent and hasattr(agent, 'action_log') and cycle_count % 50 == 0 and len(agent.action_log) > 100:
-                    log_event("Starting model training on collected data...", "INFO")
-                    try:
-                        # Ensure optimizer exists, especially if model had no params initially
-                        if optimizer is None and list(model.parameters()):
-                             current_lr = getattr(model, '_current_lr', DEFAULT_LR)
-                             optimizer = optim.Adam(model.parameters(), lr=current_lr)
-                             scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=ANNEAL_GAMMA) # Recreate scheduler too
-                             log_event("Optimizer and Scheduler re-initialized for training.", "INFO")
-
-                        if optimizer: # Proceed only if optimizer is valid
-                            avg_loss = train_on_collected_data(agent, model, optimizer)
-                            log_event(f"Training complete. Average loss: {avg_loss:.4f}", "INFO")
-                            
-                            # Save checkpoint after training if performance is good
-                            if avg_loss < 0.5: # Good performance threshold
-                                save_checkpoint(agent, model, cycle_count) # Pass agent for consistency if save_checkpoint needs it
-                                log_event("Model checkpoint saved after successful training", "INFO")
-                        else:
-                            log_event("Skipping training as optimizer is not available (model might have no parameters).", "WARNING")
-                            
-                    except Exception as e:
-                        log_event(f"Training error: {e}", "ERROR")
-                        log_event(traceback.format_exc(), "ERROR")
-                # --- End of Training Block ---
-
-
                 # Run the agent cycle with timeout protection
-                loop_result = None
                 try:
                     # Set a reasonable timeout for cycle execution
-                    # Ensure optimizer is available if run_cycle needs it (as per your original snippet)
-                    if optimizer is None and list(model.parameters()): # Defensive check
-                        log_event("Optimizer is None before run_cycle. Attempting re-initialization.", "WARNING")
-                        current_lr = getattr(model, '_current_lr', DEFAULT_LR)
-                        optimizer = optim.Adam(model.parameters(), lr=current_lr)
-                        # If scheduler was also None, you might re-initialize it here too.
-                        # scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=ANNEAL_GAMMA)
-
-                    if optimizer: # Only run if optimizer is valid
-                        cycle_future = asyncio.ensure_future(ai_manager.run_cycle(optimizer))
-                        loop_result = loop.run_until_complete(asyncio.wait_for(cycle_future, timeout=120))
-                    else:
-                        log_event("Skipping ai_manager.run_cycle as optimizer is not available.", "WARNING")
-                        loop_result = {"status": "error", "error": "Optimizer not available for cycle execution"}
-
+                    cycle_future = asyncio.ensure_future(ai_manager.run_cycle(optimizer))
+                    loop_result = loop.run_until_complete(asyncio.wait_for(cycle_future, timeout=120))
                 except asyncio.TimeoutError:
                     log_event(f"Cycle execution timed out after 120 seconds", "ERROR")
                     loop_result = {"status": "error", "error": "Execution timeout"}
                     # Cancel the future if it's still running
-                    if 'cycle_future' in locals() and not cycle_future.done():
+                    if not cycle_future.done():
                         cycle_future.cancel()
-                except Exception as cycle_exec_err: # Catch other errors from run_cycle
-                    log_event(f"Error during ai_manager.run_cycle: {cycle_exec_err}", "ERROR")
-                    log_event(traceback.format_exc(), "ERROR")
-                    loop_result = {"status": "error", "error": str(cycle_exec_err)}
-
 
                 # Check for successful cycle and handle errors
                 if isinstance(loop_result, dict) and loop_result.get("status") == "error":
                     system_status["consecutive_errors"] += 1
                     error_message = loop_result.get("error", "Unknown error")
                     log_event(f"Cycle produced an error: {error_message}", "ERROR")
-                elif loop_result is not None: # Check if loop_result was actually set (e.g. not skipped due to no optimizer)
+                else:
                     # Success! Reset error counter and update last successful cycle
                     system_status["consecutive_errors"] = 0
                     system_status["last_successful_cycle"] = cycle_count
-                    system_status["emergency_mode"] = False # Exit emergency mode on success
+                    system_status["emergency_mode"] = False
 
                     # Update strategy effectiveness if planner_sifter exists
-                    if agent and hasattr(agent, 'planner_sifter') and hasattr(agent.action_log, '__len__') and len(agent.action_log) > 0:
+                    if hasattr(agent, 'planner_sifter') and hasattr(agent.action_log, '__len__') and len(agent.action_log) > 0:
                         strategy_name = loop_result.get("strategy", "exploration")
-                        # Ensure action_log has content and get the last item
-                        last_action = agent.action_log[-1] if agent.action_log else {}
                         result_data = {
-                            "content_length": last_action.get("content_length", 0),
-                            "links_discovered": last_action.get("links_discovered", 0),
-                            "success": loop_result.get("success", False) # Use success from loop_result
+                            "content_length": agent.action_log[-1].get("content_length", 0),
+                            "links_discovered": agent.action_log[-1].get("links_discovered", 0),
+                            "success": loop_result.get("success", False)
                         }
                         agent.planner_sifter.update_strategy_effectiveness(strategy_name, result_data)
-                else:
-                    # This case handles if loop_result is None (e.g., cycle skipped)
-                    # It might be an error or an intentional skip. For now, let's count it as a minor issue.
-                    log_event("Cycle execution was skipped or did not produce a result.", "WARNING")
-                    # system_status["consecutive_errors"] += 1 # Optionally count as error
+
+                # TRAINING PHASE
+                # Check if it's time to train and we have enough data
+                if (cycle_count - system_status["last_training_cycle"] >= system_status["training_interval"] and
+                    len(agent.action_log) > 100):
+                    
+                    log_event("📚 Starting model training on collected data...", "INFO")
+                    
+                    try:
+                        # Train the model
+                        training_result = train_on_collected_data(agent, model, optimizer)
+                        
+                        if training_result:
+                            system_status["last_training_cycle"] = cycle_count
+                            system_status["total_training_sessions"] += 1
+                            
+                            avg_loss = training_result['avg_loss']
+                            task = training_result['task']
+                            samples = training_result['samples']
+                            
+                            log_event(f"✅ Training session {system_status['total_training_sessions']} complete: "
+                                     f"Task={task}, Loss={avg_loss:.4f}, Samples={samples}", "INFO")
+                            
+                            # Save checkpoint if training was successful
+                            if avg_loss < 0.5:
+                                save_checkpoint(agent, model, cycle_count)
+                                log_event("💾 Model checkpoint saved after successful training", "INFO")
+                            
+                            # Adjust training interval based on performance
+                            if avg_loss < 0.3:
+                                # Very good performance, train less frequently
+                                system_status["training_interval"] = min(100, system_status["training_interval"] + 10)
+                            elif avg_loss > 0.7:
+                                # Poor performance, train more frequently
+                                system_status["training_interval"] = max(30, system_status["training_interval"] - 10)
+                            
+                            log_event(f"Training interval adjusted to {system_status['training_interval']} cycles", "INFO")
+                        else:
+                            log_event("Training skipped due to insufficient data", "INFO")
+                            
+                    except Exception as e:
+                        log_event(f"Training error: {e}", "ERROR")
+                        log_event(traceback.format_exc(), "ERROR")
 
                 # Progressive error recovery based on consecutive error count
                 if system_status["consecutive_errors"] >= system_status["max_consecutive_errors"]:
@@ -10845,120 +10985,136 @@ def enhanced_main_loop():
                     if system_status["recovery_attempts"] == 1:
                         log_event(recovery_message + "Attempting Level 1 Recovery: Reloading model...", "WARNING")
                         try:
-                            model = load_or_create_model() # Consider passing a flag if you want to force 'new'
-                            current_lr = getattr(model, '_current_lr', DEFAULT_LR)
-
-                            if list(model.parameters()):
-                                optimizer = optim.Adam(model.parameters(), lr=current_lr)
-                                scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=ANNEAL_GAMMA)
-                                if agent: agent.model = model
-                                if ai_manager: ai_manager.model = model
-                                log_event("Level 1 Recovery successful - model reloaded, optimizer/scheduler reset", "INFO")
-                                system_status["consecutive_errors"] = 0 # Reset errors after successful recovery
-                            else:
-                                log_event("Level 1 Recovery: Model reloaded but has no parameters. Optimizer/Scheduler not set.", "WARNING")
-                                # Keep consecutive_errors high to trigger next recovery level if this isn't fixed
+                            model = load_or_create_model()
+                            optimizer = optim.Adam(model.parameters(), lr=getattr(model, '_current_lr', 5e-5))
+                            scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=ANNEAL_GAMMA)
+                            agent.model = model
+                            ai_manager.model = model
+                            log_event("Level 1 Recovery successful - model reloaded", "INFO")
                         except Exception as e:
                             log_event(f"Level 1 Recovery failed: {str(e)}", "ERROR")
-                            log_event(traceback.format_exc(), "ERROR")
 
                     # Level 2 recovery: Reset subsystems
                     elif system_status["recovery_attempts"] == 2:
                         log_event(recovery_message + "Attempting Level 2 Recovery: Resetting subsystems...", "WARNING")
                         try:
-                            if ai_manager and hasattr(ai_manager, "consciousness"):
-                                ai_manager.consciousness = Consciousness() # Re-initialize
-                            if ai_manager and hasattr(ai_manager, "imagination"):
-                                ai_manager.imagination = Imagination() # Re-initialize
-                            if agent and hasattr(agent, "free_will"):
-                                agent.free_will = FreeWill() # Re-initialize
+                            # Reset consciousness module
+                            if hasattr(ai_manager, "consciousness"):
+                                ai_manager.consciousness.awareness_level = 0.5
+                                ai_manager.consciousness.current_state = "balanced"
+
+                            # Reset imagination engine
+                            if hasattr(ai_manager, "imagination"):
+                                ai_manager.imagination.creativity_level = 0.7
+                                ai_manager.imagination.current_mode = "associative"
+
+                            # Reset free will
+                            if hasattr(agent, "free_will"):
+                                agent.free_will.exploration_weight = 0.6
+                                agent.free_will.exploitation_weight = 0.4
+
                             log_event("Level 2 Recovery successful - subsystems reset", "INFO")
-                            system_status["consecutive_errors"] = 0
                         except Exception as e:
                             log_event(f"Level 2 Recovery failed: {str(e)}", "ERROR")
-                            log_event(traceback.format_exc(), "ERROR")
 
                     # Level 3 recovery: Create new adaptive learning system
                     elif system_status["recovery_attempts"] == 3:
                         log_event(recovery_message + "Attempting Level 3 Recovery: Reinitializing adaptive learning...", "WARNING")
                         try:
-                            if agent and model : # Ensure model exists
-                                agent.adaptive_learning = AdaptiveLearningSystem(model)
-                                log_event("Level 3 Recovery successful - adaptive learning reinitialized", "INFO")
-                                system_status["consecutive_errors"] = 0
-                            else:
-                                log_event("Level 3 Recovery failed: Agent or Model not available.", "ERROR")
+                            adaptive_learning = AdaptiveLearningSystem(model)
+                            agent.adaptive_learning = adaptive_learning
+                            log_event("Level 3 Recovery successful - adaptive learning reinitialized", "INFO")
                         except Exception as e:
                             log_event(f"Level 3 Recovery failed: {str(e)}", "ERROR")
-                            log_event(traceback.format_exc(), "ERROR")
 
                     # Level 4 recovery: Emergency mode - simplified operation
                     elif system_status["recovery_attempts"] >= 4:
                         log_event(recovery_message + "Activating Emergency Mode: Reduced functionality...", "CRITICAL")
                         system_status["emergency_mode"] = True
-                        # In emergency mode, we might simplify operations or increase sleep times
-                        # Reset recovery counter after maximum attempts to allow periodic retry of full recovery sequence
-                        if system_status["recovery_attempts"] > 6: # e.g., after 3 more attempts in emergency mode
-                            system_status["recovery_attempts"] = 0 # Reset to try Level 1 again next time
-                            system_status["consecutive_errors"] = 0 # Give it a fresh start for error counting
-                            log_event("Recovery attempt counter reset to retry recovery sequence from Level 1.", "INFO")
+
+                        # In emergency mode, we use simpler processing and avoid complex operations
+                        # Reset recovery counter after maximum attempts to allow periodic retry
+                        if system_status["recovery_attempts"] > 6:
+                            system_status["recovery_attempts"] = 0
+                            log_event("Recovery attempt counter reset to retry recovery sequence", "INFO")
+
+                # Periodic status reports
+                if cycle_count % 20 == 0:
+                    # Generate status report
+                    status_report = f"""
+                    ===== Status Report - Cycle {cycle_count} =====
+                    Training Sessions: {system_status['total_training_sessions']}
+                    Next Training: {system_status['last_training_cycle'] + system_status['training_interval'] - cycle_count} cycles
+                    Consecutive Errors: {system_status['consecutive_errors']}
+                    Emergency Mode: {system_status['emergency_mode']}
+                    Recovery Attempts: {system_status['recovery_attempts']}
+                    """
+                    
+                    # Add memory statistics if available
+                    if hasattr(agent, 'free_will') and hasattr(agent.free_will, 'semantic_memory'):
+                        if isinstance(agent.free_will.semantic_memory, SemanticMemoryModule):
+                            mem_stats = agent.free_will.semantic_memory.get_memory_statistics()
+                            status_report += f"""
+                    Semantic Memories: {mem_stats['count']}
+                    Memory Utilization: {mem_stats['memory_utilization']:.2%}
+                    Knowledge Graph Nodes: {mem_stats['knowledge_graph_nodes']}
+                    """
+                    
+                    # Add domain statistics
+                    if hasattr(agent, 'domain_stats') and agent.domain_stats:
+                        status_report += f"Domains Visited: {len(agent.domain_stats)}"
+                    
+                    log_event(status_report, "INFO")
 
                 # Periodic model saving with enhanced reliability
                 if cycle_count % SAVE_INTERVAL == 0:
-                    if agent and model: # Ensure agent and model exist
-                        save_success = save_checkpoint(agent, model, cycle_count)
-                        if not save_success and not system_status["emergency_mode"]:
-                            log_event("Primary and backup checkpoint saves failed - will retry next interval", "WARNING")
-                    else:
-                        log_event(f"Skipping periodic save at cycle {cycle_count} as agent or model is not available.", "WARNING")
+                    save_success = save_checkpoint(agent, model, cycle_count)
 
+                    if not save_success and not system_status["emergency_mode"]:
+                        log_event("Primary and backup checkpoint saves failed - will retry next interval", "WARNING")
 
                 # Update learning rate
-                if scheduler: # Check if scheduler exists
-                    old_lr = optimizer.param_groups[0]['lr']
-                    scheduler.step()
-                    new_lr = optimizer.param_groups[0]['lr']
-                    if new_lr != old_lr and hasattr(model, 'set_lr'):
-                        model.set_lr(new_lr) # Update model's internal LR tracker
-                    log_event(f"Learning rate updated by scheduler. Old: {old_lr:.2e}, New: {new_lr:.2e}", "DEBUG")
-                
+                scheduler.step()
+
                 # Sleep briefly for stability
-                sleep_duration = 0.5
-                if system_status["emergency_mode"]:
-                    sleep_duration = 5.0 # Longer sleep in emergency mode
-                    log_event(f"Emergency mode active. Sleeping for {sleep_duration}s", "WARNING")
-                time.sleep(sleep_duration)
+                time.sleep(0.5)
 
             except KeyboardInterrupt:
-                log_event("Keyboard interrupt detected. Exiting gracefully...", "INFO")
-                if agent and model:
-                    save_checkpoint(agent, model, cycle_count) # Final save attempt
-                break # Exit the while True loop
+                log_event("Keyboard interrupt detected. Performing final training before exit...", "INFO")
+                
+                # Final training session before exit
+                try:
+                    training_result = train_on_collected_data(agent, model, optimizer, min_samples=20)
+                    if training_result:
+                        log_event(f"Final training complete: Loss={training_result['avg_loss']:.4f}", "INFO")
+                except Exception as e:
+                    log_event(f"Final training failed: {e}", "ERROR")
+                
+                # Final save attempt
+                save_checkpoint(agent, model, cycle_count)
+                break
 
-            except Exception as e: # Catch-all for unexpected errors within the main loop's try block
+            except Exception as e:
                 log_event(f"Unhandled exception in main loop: {str(e)}", "ERROR")
                 log_event(traceback.format_exc(), "ERROR")
 
                 system_status["consecutive_errors"] += 1
 
                 # More aggressive handling for unhandled exceptions
-                if system_status["consecutive_errors"] >= system_status["max_consecutive_errors"] * 2: # e.g. 6 errors
+                if system_status["consecutive_errors"] >= system_status["max_consecutive_errors"] * 2:
                     log_event("Critical unhandled exception threshold reached. Attempting final save before exit.", "CRITICAL")
-                    if agent and model:
-                        save_checkpoint(agent, model, cycle_count)
-                    break # Exit the while True loop
+                    save_checkpoint(agent, model, cycle_count)
+                    break
 
-                time.sleep(5.0) # Longer sleep after an unhandled error before retrying loop
+                # Longer sleep after unhandled error
+                time.sleep(5.0)
 
     except Exception as init_error:
         log_event(f"Fatal initialization error: {str(init_error)}", "CRITICAL")
         log_event(traceback.format_exc(), "CRITICAL")
-        return False # Indicate initialization failed
+        return False
 
-    log_event("Application shutdown complete.", "INFO")
-    return True # Indicate successful run or graceful shutdown
-
-    
+    return True    
 
 
 def main():
@@ -10968,7 +11124,7 @@ def main():
     log_event("=== Initializing Quantum Nexus Advanced Autonomous System ===", "INFO")
     log_event(f"Configuration: Model path: {MODEL_PATH}, Memory limit: {MEMORY_MAX_SIZE}", "INFO")
 
-    # Check for CUDA (no changes)
+    # Check for CUDA
     import torch
     if torch.cuda.is_available():
         device_name = torch.cuda.get_device_name(0)
@@ -10976,18 +11132,26 @@ def main():
     else:
         log_event("⚠️ No GPU detected - running on CPU (performance will be limited)", "WARNING")
 
-    # Check for Colab environment and mount Google Drive (no changes)
+    # Check for sentence-transformers
+    try:
+        from sentence_transformers import SentenceTransformer
+        log_event("✅ Sentence-transformers available for real embeddings", "INFO")
+    except ImportError:
+        log_event("⚠️ WARNING: sentence-transformers not installed. Install with: pip install sentence-transformers", "WARNING")
+        log_event("System will fall back to placeholder embeddings", "WARNING")
+
+    # Check for Colab environment and mount Google Drive
     if IN_COLAB:
         try:
             from google.colab import drive
-            drive.mount('/content/gdrive', force_remount=True) # Mount to /content/gdrive - MODIFIED MOUNT POINT
-            log_event("📂 Google Drive mounted successfully to /content/gdrive", "INFO") # Updated log message
+            drive.mount('/content/gdrive', force_remount=True)
+            log_event("📂 Google Drive mounted successfully to /content/gdrive", "INFO")
         except Exception as e_mount:
             log_event(f"⚠️ Error mounting Google Drive: {e_mount}", "ERROR")
             log_event("Google Drive integration disabled for this run", "WARNING")
             IN_COLAB = False
 
-    # Find a free port for Flask Dashboard (no changes)
+    # Find a free port for Flask Dashboard
     FLASK_PORT = find_free_port()
     if FLASK_PORT is None:
         log_event("Error: No free port found for Flask dashboard. Dashboard will not start.", "ERROR")
@@ -10996,19 +11160,20 @@ def main():
         flask_thread = Thread(target=start_flask)
         flask_thread.daemon = True
         flask_thread.start()
-        time.sleep(2) # Give Flask time to start
+        time.sleep(2)  # Give Flask time to start
 
-    # Create special greeting (XOXO style) - No changes
+    # Create special greeting (XOXO style)
     greeting = """
     ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
 
     🔺🔻 QUANTUM NEXUS AUTONOMOUS SYSTEM ACTIVATED 🔺🔻
 
-    💫 Full AGI ASI SI With Enhanced Capabilities 💫
+    💫 Enhanced with Real Embeddings & Training Capabilities 💫
 
     ✨ Features:
-    • Quantum-inspired processing
-    • Advanced consciousness simulation
+    • Real sentence embeddings (Sentence-BERT)
+    • Actual web content processing
+    • Adaptive model training on collected data
     • Self-evolving neural architecture
     • Hyperdimensional memory systems
     • XOXO Planner Sifter for optimal strategies
@@ -11019,12 +11184,12 @@ def main():
     """
     log_event(greeting, "QUANTUM")
 
-    # Start autonomous agent loop (no changes)
+    # Start autonomous agent loop
     agent_thread = Thread(target=enhanced_main_loop)
     agent_thread.daemon = True
     agent_thread.start()
 
-    # Keep main thread alive (no changes)
+    # Keep main thread alive
     try:
         while True:
             time.sleep(1)
@@ -11293,4 +11458,3 @@ if __name__ == "__main__":
     except Exception as e:
         log_event(f"Critical startup error: {e}", "CRITICAL")
         traceback.print_exc()
-
